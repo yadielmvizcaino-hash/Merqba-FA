@@ -1,0 +1,6 @@
+{
+  "name": "Merqba FA",
+  "description": "Merqba FA - Gestor rápido de inventario, precios y stock en tiempo real para vendedores de WooCommerce y Marketplace.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

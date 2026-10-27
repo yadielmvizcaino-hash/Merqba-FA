@@ -1,0 +1,128 @@
+import { Product, DokanVendor, StoreConfig, WebhookLog } from '../types';
+import { INITIAL_PRODUCTS, INITIAL_VENDORS, DEFAULT_CONFIG } from '../data/initialData';
+
+const STORAGE_KEYS = {
+  PRODUCTS: 'merchant_pulse_products_v1',
+  VENDORS: 'merchant_pulse_vendors_v1',
+  CURRENT_VENDOR_ID: 'merchant_pulse_current_vendor_id',
+  CONFIG: 'merchant_pulse_store_config',
+  WEBHOOK_LOGS: 'merchant_pulse_webhook_logs',
+};
+
+export const getStoredProducts = (): Product[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+      return INITIAL_PRODUCTS;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error loading products from localStorage', e);
+    return INITIAL_PRODUCTS;
+  }
+};
+
+export const saveStoredProducts = (products: Product[]): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+  } catch (e) {
+    console.error('Error saving products to localStorage', e);
+  }
+};
+
+export const getStoredVendors = (): DokanVendor[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.VENDORS);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(INITIAL_VENDORS));
+      return INITIAL_VENDORS;
+    }
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error('Error loading vendors from localStorage', e);
+    return INITIAL_VENDORS;
+  }
+};
+
+export const saveStoredVendors = (vendors: DokanVendor[]): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(vendors));
+  } catch (e) {
+    console.error('Error saving vendors to localStorage', e);
+  }
+};
+
+export const getCurrentVendorId = (): number => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_VENDOR_ID);
+    if (raw) {
+      const parsed = parseInt(raw, 10);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return INITIAL_VENDORS[0].id;
+  } catch (e) {
+    return INITIAL_VENDORS[0].id;
+  }
+};
+
+export const setCurrentVendorId = (id: number): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CURRENT_VENDOR_ID, id.toString());
+  } catch (e) {
+    console.error('Error saving current vendor id', e);
+  }
+};
+
+export const getStoredConfig = (): StoreConfig => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.CONFIG);
+    if (!raw) {
+      localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(DEFAULT_CONFIG));
+      return DEFAULT_CONFIG;
+    }
+    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+  } catch (e) {
+    return DEFAULT_CONFIG;
+  }
+};
+
+export const saveStoredConfig = (config: StoreConfig): void => {
+  try {
+    localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(config));
+  } catch (e) {
+    console.error('Error saving config', e);
+  }
+};
+
+export const getStoredWebhookLogs = (): WebhookLog[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.WEBHOOK_LOGS);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+export const addStoredWebhookLog = (log: WebhookLog): void => {
+  try {
+    const logs = getStoredWebhookLogs();
+    const updated = [log, ...logs].slice(0, 30); // keep last 30
+    localStorage.setItem(STORAGE_KEYS.WEBHOOK_LOGS, JSON.stringify(updated));
+  } catch (e) {
+    console.error('Error saving webhook log', e);
+  }
+};
+
+export const resetAllData = (): { products: Product[]; vendors: DokanVendor[]; config: StoreConfig } => {
+  localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+  localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(INITIAL_VENDORS));
+  localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(DEFAULT_CONFIG));
+  localStorage.setItem(STORAGE_KEYS.CURRENT_VENDOR_ID, INITIAL_VENDORS[0].id.toString());
+  localStorage.removeItem(STORAGE_KEYS.WEBHOOK_LOGS);
+  return {
+    products: INITIAL_PRODUCTS,
+    vendors: INITIAL_VENDORS,
+    config: DEFAULT_CONFIG,
+  };
+};
