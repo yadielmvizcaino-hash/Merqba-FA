@@ -16,7 +16,16 @@ export const getStoredProducts = (): Product[] => {
       localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
       return INITIAL_PRODUCTS;
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.some((p: any) => p.vendorId === 14 || p.vendorId === 22 || p.vendorId === 35 || !p.vendorId)) {
+      const migrated = parsed.map((p: any) => ({
+        ...p,
+        vendorId: p.vendorId === 14 || !p.vendorId ? 1 : (p.vendorId === 22 ? 87 : 191),
+      }));
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(migrated));
+      return migrated;
+    }
+    return parsed;
   } catch (e) {
     console.error('Error loading products from localStorage', e);
     return INITIAL_PRODUCTS;

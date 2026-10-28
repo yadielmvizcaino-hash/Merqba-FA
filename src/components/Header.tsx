@@ -68,13 +68,6 @@ export const Header: React.FC<HeaderProps> = ({
                 Tiempo Real Activo
               </span>
             )}
-            <button
-              onClick={onOpenWebhookLogs}
-              className="text-slate-300 hover:text-[#FFA000] transition-colors underline flex items-center gap-1 cursor-pointer"
-              title="Ver registro de Webhook y Payload"
-            >
-              Payload / Webhook
-            </button>
             <span className="text-slate-400 text-[10px]">Sync: {lastSyncTime}</span>
           </div>
         </div>

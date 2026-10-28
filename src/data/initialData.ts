@@ -1,7 +1,7 @@
 import { DokanVendor, Product, StoreConfig } from '../types';
 
 export const INITIAL_VENDORS: DokanVendor[] = [
-    {
+  {
     id: 1,
     name: 'Yadiel Moya',
     storeName: 'Merqba',
@@ -108,10 +108,10 @@ export const INITIAL_VENDORS: DokanVendor[] = [
 ];
 
 export const INITIAL_PRODUCTS: Product[] = [
-  // Vendor 14: TecnoStore Pro
+  // Vendor 1: Merqba (Yadiel Moya)
   {
     id: 4081,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Auriculares Inalámbricos Noise Cancelling ANC Pro',
     sku: 'TEC-ANC-01',
     regularPrice: 89.99,
@@ -126,7 +126,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 4082,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Smartwatch Deportivo Ultra GPS & Pulsómetro',
     sku: 'TEC-SW-99',
     regularPrice: 129.00,
@@ -140,7 +140,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 4083,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Teclado Mecánico RGB Switch Red 65% Compacto',
     sku: 'TEC-KB-65',
     regularPrice: 65.50,
@@ -155,7 +155,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 4084,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Cargador Rápido GaN 65W USB-C Dual PD',
     sku: 'TEC-CH-65',
     regularPrice: 34.90,
@@ -169,7 +169,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 4085,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Micrófono Condensador USB Cardioide Studio',
     sku: 'TEC-MIC-PRO',
     regularPrice: 79.00,
@@ -183,7 +183,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 4086,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Cámara Web 4K UltraHD con Luz Anular LED',
     sku: 'TEC-CAM-4K',
     regularPrice: 95.00,
@@ -198,7 +198,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 4087,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Soporte Ergonómico de Aluminio para Laptop',
     sku: 'TEC-ST-ALU',
     regularPrice: 28.50,
@@ -212,7 +212,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 4088,
-    vendorId: 14,
+    vendorId: 1,
     name: 'Hub USB-C 8 en 1 con HDMI 4K & Ethernet',
     sku: 'TEC-HUB-08',
     regularPrice: 45.00,
@@ -225,10 +225,10 @@ export const INITIAL_PRODUCTS: Product[] = [
     tags: ['hub', 'usbc', 'hdmi'],
   },
 
-  // Vendor 22: Moda & Calzado Urbano
+  // Vendor 87: Surticuba
   {
     id: 5011,
-    vendorId: 22,
+    vendorId: 87,
     name: 'Zapatillas Urbanas Eco Cuero Unisex Blancas',
     sku: 'MOD-SNK-01',
     regularPrice: 75.00,
@@ -243,7 +243,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 5012,
-    vendorId: 22,
+    vendorId: 87,
     name: 'Chaqueta Denim Oversize Vintage Lavada',
     sku: 'MOD-JKT-OVR',
     regularPrice: 89.90,
@@ -257,7 +257,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 5013,
-    vendorId: 22,
+    vendorId: 87,
     name: 'Gafas de Sol Polarizadas Marco Acetato Carey',
     sku: 'MOD-SUN-POL',
     regularPrice: 42.00,
@@ -272,7 +272,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 5014,
-    vendorId: 22,
+    vendorId: 87,
     name: 'Mochila Impermeable Canvas & Piel 20L',
     sku: 'MOD-BCK-CAN',
     regularPrice: 68.00,
@@ -286,7 +286,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 5015,
-    vendorId: 22,
+    vendorId: 87,
     name: 'Camisa Lino Cuello Mao Manga Larga',
     sku: 'MOD-SHR-MAO',
     regularPrice: 49.50,
@@ -299,10 +299,10 @@ export const INITIAL_PRODUCTS: Product[] = [
     tags: ['lino', 'verano', 'casual'],
   },
 
-  // Vendor 35: Boutique Gourmet Orgánico
+  // Vendor 191: Los Chanas Ferretería
   {
     id: 6021,
-    vendorId: 35,
+    vendorId: 191,
     name: 'Aceite de Oliva Virgen Extra Cosecha Temprana 500ml',
     sku: 'GOUR-AOV-500',
     regularPrice: 18.50,
@@ -316,7 +316,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 6022,
-    vendorId: 35,
+    vendorId: 191,
     name: 'Café de Especialidad Grano Arábica Etiopía 250g',
     sku: 'GOUR-CAF-ETH',
     regularPrice: 14.00,
@@ -331,7 +331,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 6023,
-    vendorId: 35,
+    vendorId: 191,
     name: 'Miel Pura de Romero y Azahar de la Sierra 500g',
     sku: 'GOUR-HON-ROM',
     regularPrice: 9.80,
@@ -345,7 +345,7 @@ export const INITIAL_PRODUCTS: Product[] = [
   },
   {
     id: 6024,
-    vendorId: 35,
+    vendorId: 191,
     name: 'Chocolate Negro Artesanal 85% Cacao Criollo 100g',
     sku: 'GOUR-CHOC-85',
     regularPrice: 5.50,
