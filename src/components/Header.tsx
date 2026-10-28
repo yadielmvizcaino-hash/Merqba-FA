@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Send, Settings, Zap } from 'lucide-react';
+import { RefreshCw, Send, Settings, Zap, Wifi, WifiOff } from 'lucide-react';
 import { DokanVendor, StoreConfig } from '../types';
 
 interface HeaderProps {
@@ -14,6 +14,7 @@ interface HeaderProps {
   onOpenStoreConfig: () => void;
   onOpenWebhookLogs: () => void;
   lastSyncTime: string;
+  isOnline?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStoreConfig,
   onOpenWebhookLogs,
   lastSyncTime,
+  isOnline = true,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#0B0E14] border-b border-[#1F2633] shadow-md">
@@ -36,9 +38,23 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="max-w-[2400px] mx-auto flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 bg-[#1F1712] border border-[#FF5A00]/30 text-[#FFA000] px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-sync-pulse"></span>
+              <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-[#10B981] animate-sync-pulse' : 'bg-[#F59E0B]'}`}></span>
               Merqba FA • Marketplace
             </span>
+
+            {/* Online / Offline status badge */}
+            {isOnline ? (
+              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold text-[#10B981] bg-[#052E16] border border-[#166534] px-1.5 py-0.2 rounded">
+                <Wifi className="w-3 h-3 text-[#10B981]" />
+                En línea (Guardado local activo)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#FFA000] bg-[#2A1705] border border-[#FF5A00]/50 px-2 py-0.5 rounded animate-pulse">
+                <WifiOff className="w-3 h-3 text-[#FFA000]" />
+                Modo Offline • Guardado local activo
+              </span>
+            )}
+
             <span className="text-slate-600 hidden sm:inline">|</span>
             <span className="text-slate-400 hidden sm:inline truncate max-w-[220px]">
               {config.storeUrl.replace(/^https?:\/\//, '')}

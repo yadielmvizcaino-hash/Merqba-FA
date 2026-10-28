@@ -52,6 +52,9 @@ export default function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isDispatchingWebhook, setIsDispatchingWebhook] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>('Ahora');
+  const [isOnline, setIsOnline] = useState<boolean>(() =>
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -81,7 +84,34 @@ export default function App() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   };
 
-  // Initialize data on mount
+  // Online / Offline connectivity listeners
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      addToast(
+        'success',
+        'Conexión Restablecida',
+        'Tu dispositivo está en línea nuevamente. Puedes sincronizar o aplicar cambios pendientes.'
+      );
+    };
+    const handleOffline = () => {
+      setIsOnline(false);
+      addToast(
+        'info',
+        'Modo Offline Activo',
+        'Sin internet. Puedes seguir editando nombres, fotos, precios y stock con normalidad; todo se guarda localmente en tu dispositivo.'
+      );
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Initialize data on mount and auto-sync with live WooCommerce store
   useEffect(() => {
     const loadedProducts = getStoredProducts();
     const loadedVendors = getStoredVendors();
@@ -93,6 +123,9 @@ export default function App() {
     setActiveVendorId(activeId);
     setWebhookLogs(loadedLogs);
     setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
+
+    // Automatically sync live catalog from WooCommerce if products are demo or empty
+    handleSync(true);
   }, []);
 
   // Save products to storage whenever updated
@@ -105,14 +138,14 @@ export default function App() {
   // Current logged in vendor
   const currentVendor = useMemo(() => {
     return vendors.find((v) => v.id === currentVendorId) || vendors[0] || {
-      id: 14,
-      name: 'Vendedor',
-      storeName: 'Mi Tienda',
-      email: 'vendedor@marketplace.com',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+      id: 1,
+      name: 'Yadiel Moya',
+      storeName: 'Merqba',
+      email: 'yadielmvizcaino@gmail.com',
+      avatar: 'https://merqba.com/wp-content/uploads/2026/05/merqba-logo-icon.png',
       banner: '',
       rating: 5.0,
-      ratingCount: 1,
+      ratingCount: 56,
       storeUrl: 'https://merqba.com',
       phone: '',
       address: '',
@@ -217,42 +250,62 @@ export default function App() {
   };
 
   // Sync products with app: "🔥Botón para sincronizar productos con la app"
-  const handleSync = async () => {
+  const handleSync = async (silent = false) => {
     setIsSyncing(true);
     try {
-      const res = await fetch(`/api/woocommerce/products?vendor_id=${currentVendor.id}`);
+      const res = await fetch('/api/woocommerce/products');
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-          setProducts((prev) => {
-            const others = prev.filter((p) => p.vendorId !== currentVendor.id);
-            return [...data.products, ...others];
-          });
-          addToast(
-            'success',
-            'Catálogo Sincronizado en Vivo',
-            `${data.products.length} productos actualizados desde https://merqba.com.`
-          );
+          // 1. Update all products from WooCommerce
+          setProducts(data.products);
+          saveStoredProducts(data.products);
+
+          // 2. Update vendors from live WooCommerce stores discovered
+          if (Array.isArray(data.vendors) && data.vendors.length > 0) {
+            setVendors(data.vendors);
+            saveStoredVendors(data.vendors);
+          }
+
+          // 3. Ensure current vendor has products
+          const currentHasProducts = data.products.some((p: Product) => p.vendorId === currentVendorId);
+          let targetVendor = vendors.find((v) => v.id === currentVendorId);
+
+          if (!currentHasProducts || currentVendorId === 14) {
+            // Find store with most products (e.g. ID 1: Merqba - Yadiel Moya with 56 products)
+            const countByVendor: Record<number, number> = {};
+            data.products.forEach((p: Product) => {
+              countByVendor[p.vendorId] = (countByVendor[p.vendorId] || 0) + 1;
+            });
+            const topVendorId = Object.keys(countByVendor).map(Number).sort((a, b) => countByVendor[b] - countByVendor[a])[0] || 1;
+            setActiveVendorId(topVendorId);
+            setCurrentVendorId(topVendorId);
+            targetVendor = (data.vendors || vendors).find((v: any) => v.id === topVendorId);
+          }
+
+          const vendorProdCount = data.products.filter((p: Product) => p.vendorId === (targetVendor?.id || currentVendorId)).length;
+
+          if (!silent) {
+            addToast(
+              'success',
+              'Catálogo Real Sincronizado',
+              `${data.products.length} productos en vivo de https://merqba.com. Mostrando ${vendorProdCount} productos de "${targetVendor?.storeName || 'tu tienda'}".`
+            );
+          }
         } else {
-          addToast(
-            'success',
-            'Catálogo Sincronizado',
-            `Conectado con la API de https://merqba.com.`
-          );
+          if (!silent) {
+            addToast('info', 'Catálogo Sincronizado', 'Conexión exitosa con la API de https://merqba.com.');
+          }
         }
       } else {
-        addToast(
-          'success',
-          'Catálogo Sincronizado',
-          `Conectado con https://merqba.com.`
-        );
+        if (!silent) {
+          addToast('error', 'Error al Sincronizar', 'No se pudo obtener el catálogo de WooCommerce.');
+        }
       }
-    } catch (e) {
-      addToast(
-        'info',
-        'Sincronización Completada',
-        'Catálogo verificado y listo para operar.'
-      );
+    } catch (e: any) {
+      if (!silent) {
+        addToast('error', 'Error al Sincronizar', e.message || 'Fallo de conexión.');
+      }
     } finally {
       setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
       setIsSyncing(false);
@@ -392,6 +445,7 @@ export default function App() {
         onOpenStoreConfig={() => setIsConfigOpen(true)}
         onOpenWebhookLogs={() => setIsWebhookOpen(true)}
         lastSyncTime={lastSyncTime}
+        isOnline={isOnline}
       />
 
       {/* 2. Dokan Vendor Identification & Store Metrics Bar */}
@@ -528,6 +582,7 @@ export default function App() {
         products={products}
         onSelectVendor={handleSelectVendor}
         onAddCustomVendor={handleAddCustomVendor}
+        onShowToast={addToast}
       />
 
       <WebhookModal

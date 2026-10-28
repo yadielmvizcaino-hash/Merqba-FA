@@ -38,7 +38,13 @@ export const getStoredVendors = (): DokanVendor[] => {
       localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(INITIAL_VENDORS));
       return INITIAL_VENDORS;
     }
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    // If old mock vendors exist (e.g. ID 14), upgrade to real vendors
+    if (Array.isArray(parsed) && parsed.some((v: any) => v.id === 14)) {
+      localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(INITIAL_VENDORS));
+      return INITIAL_VENDORS;
+    }
+    return parsed;
   } catch (e) {
     console.error('Error loading vendors from localStorage', e);
     return INITIAL_VENDORS;
@@ -58,11 +64,13 @@ export const getCurrentVendorId = (): number => {
     const raw = localStorage.getItem(STORAGE_KEYS.CURRENT_VENDOR_ID);
     if (raw) {
       const parsed = parseInt(raw, 10);
-      if (!isNaN(parsed)) return parsed;
+      // Migrate away from old mock ID 14
+      if (!isNaN(parsed) && parsed !== 14) return parsed;
     }
-    return INITIAL_VENDORS[0].id;
+    localStorage.setItem(STORAGE_KEYS.CURRENT_VENDOR_ID, '1');
+    return 1;
   } catch (e) {
-    return INITIAL_VENDORS[0].id;
+    return 1;
   }
 };
 
