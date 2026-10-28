@@ -42,10 +42,23 @@ import {
 } from 'lucide-react';
 
 export default function App() {
+  const hasAuthCookie = typeof document !== 'undefined' && document.cookie.split(';').some(c => c.trim().startsWith('merqba_auth=true'));
+  const getInitialVendorId = () => {
+    if (typeof document !== 'undefined') {
+      const cookies = document.cookie.split(';');
+      const vendorCookie = cookies.find(c => c.trim().startsWith('merqba_vendor_id='));
+      if (vendorCookie) {
+        const id = parseInt(vendorCookie.split('=')[1], 10);
+        if (!isNaN(id)) return id;
+      }
+    }
+    return getCurrentVendorId();
+  };
+
   // Core state
   const [products, setProducts] = useState<Product[]>([]);
   const [vendors, setVendors] = useState<DokanVendor[]>([]);
-  const [currentVendorId, setActiveVendorId] = useState<number>(14);
+  const [currentVendorId, setActiveVendorId] = useState<number>(getInitialVendorId());
   const [config, setConfig] = useState<StoreConfig>(getStoredConfig());
   const [webhookLogs, setWebhookLogs] = useState<WebhookLog[]>([]);
 
@@ -64,7 +77,8 @@ export default function App() {
   const [sortOption, setSortOption] = useState<SortOption>('name-asc');
 
   // Modal states
-  const [isLoginOpen, setIsLoginOpen] = useState(true);
+  const [isLoginOpen, setIsLoginOpen] = useState<boolean>(!hasAuthCookie);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(hasAuthCookie);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isWebhookOpen, setIsWebhookOpen] = useState(false);
   const [quickEditProduct, setQuickEditProduct] = useState<Product | null>(null);
@@ -647,11 +661,17 @@ export default function App() {
 
       <LoginModal
         isOpen={isLoginOpen}
-        onClose={() => setIsLoginOpen(false)}
+        isAuthenticated={isAuthenticated}
+        onClose={() => {
+          if (isAuthenticated) setIsLoginOpen(false);
+        }}
         currentVendor={currentVendor}
         vendors={vendors}
         products={products}
-        onSelectVendor={handleSelectVendor}
+        onSelectVendor={(v) => {
+          setIsAuthenticated(true);
+          handleSelectVendor(v);
+        }}
         onAddCustomVendor={handleAddCustomVendor}
         onShowToast={addToast}
       />

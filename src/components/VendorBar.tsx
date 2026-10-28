@@ -37,10 +37,6 @@ export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVe
                 <span>({vendor.ratingCount} valoraciones)</span>
               </span>
             </div>
-
-            <p className="text-xs text-[#475569] mt-0.5">
-              Filtrado activo: <strong className="text-[#0F172A] font-semibold">{vendor.storeName}</strong> (ID #{vendor.id}) • Solo tus productos son visibles y editables.
-            </p>
           </div>
         </div>
 

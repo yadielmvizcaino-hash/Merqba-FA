@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Settings, RotateCcw, Check, ShieldCheck, Link2, Zap, Server } from 'lucide-react';
+import { X, Settings, Check, ShieldCheck, Link2 } from 'lucide-react';
 import { StoreConfig } from '../types';
 
 interface StoreConfigModalProps {
@@ -15,28 +15,23 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   onClose,
   config,
   onSaveConfig,
-  onResetCatalog,
 }) => {
   if (!isOpen) return null;
 
   const [webhookUrl, setWebhookUrl] = useState(config.webhookUrl);
-  const [currencySymbol, setCurrencySymbol] = useState(config.currencySymbol);
-  const [realtimeSync, setRealtimeSync] = useState(config.realtimeSync);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSaveConfig({
       ...config,
       webhookUrl: webhookUrl.trim() || config.webhookUrl,
-      currencySymbol: currencySymbol.trim() || '$',
-      realtimeSync,
     });
     onClose();
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
-      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] overflow-hidden max-h-[90vh] flex flex-col">
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="px-5 py-4 bg-[#0B0E14] text-white flex items-center justify-between border-b border-[#1E2530]">
           <div className="flex items-center gap-2.5">
@@ -46,7 +41,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             <div>
               <h2 className="text-base font-bold text-white">Conexión Merqba FA</h2>
               <p className="text-[11px] text-[#FFA000]">
-                Estado de la tienda y sincronización
+                Estado de la tienda y Webhook
               </p>
             </div>
           </div>
@@ -60,7 +55,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 overflow-y-auto space-y-4 flex-1">
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
           {/* Pre-configured Verified Store Card */}
           <div className="p-3.5 bg-[#F0FDF4] border border-[#86EFAC] rounded-xl space-y-2">
             <div className="flex items-center justify-between">
@@ -79,7 +74,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                 <span className="font-bold">https://merqba.com</span>
               </div>
               <p className="text-[11px] text-[#15803D]">
-                Clave del cliente y secreta aplicadas de forma segura en el servidor. Tus vendedores no necesitan introducirlas para operar.
+                Credenciales aplicadas de forma segura en el servidor.
               </p>
             </div>
           </div>
@@ -94,68 +89,11 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
               placeholder="https://merqba.com/wp-json/merqba/v1/sync"
-              className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/25"
+              className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/25"
             />
             <p className="text-[11px] text-[#64748B] mt-1">
               Receptor al que se disparan las actualizaciones de stock y precios al pulsar &apos;Aplicar Cambios&apos;.
             </p>
-          </div>
-
-          {/* Currency Symbol & Realtime switch */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-bold text-[#0F172A] mb-1">
-                Símbolo de Moneda
-              </label>
-              <input
-                type="text"
-                value={currencySymbol}
-                onChange={(e) => setCurrencySymbol(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/25"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-[#0F172A] mb-1">
-                Tiempo Real
-              </label>
-              <div className="pt-1">
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-[#0F172A]">
-                  <input
-                    type="checkbox"
-                    checked={realtimeSync}
-                    onChange={(e) => setRealtimeSync(e.target.checked)}
-                    className="w-4 h-4 rounded text-[#10B981] focus:ring-[#FF5A00] border-[#CBD5E1]"
-                  />
-                  <span>Disparo continuo</span>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          {/* Reset / Restore Demo Catalog */}
-          <div className="pt-3 border-t border-[#E2E8F0]">
-            <div className="flex items-center justify-between">
-              <div>
-                <span className="text-xs font-bold text-[#0F172A]">Restaurar Inventario</span>
-                <p className="text-[11px] text-[#64748B]">
-                  Recupera el catálogo inicial de demostración.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  if (confirm('¿Restaurar los productos iniciales? Se perderán las modificaciones locales no sincronizadas.')) {
-                    onResetCatalog();
-                    onClose();
-                  }
-                }}
-                className="px-3 py-1.5 border border-[#FECACA] hover:bg-[#FEF2F2] text-[#EF4444] text-xs font-bold rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Restaurar</span>
-              </button>
-            </div>
           </div>
 
           {/* Buttons */}
@@ -172,7 +110,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
               className="px-5 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
               <Check className="w-4 h-4" />
-              <span>Guardar Preferencias</span>
+              <span>Guardar</span>
             </button>
           </div>
         </form>
