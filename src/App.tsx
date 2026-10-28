@@ -23,6 +23,7 @@ import { VendorBar } from './components/VendorBar';
 import { FilterBar } from './components/FilterBar';
 import { ProductCard } from './components/ProductCard';
 import { ProductQuickEditModal } from './components/ProductQuickEditModal';
+import { ShareProductModal } from './components/ShareProductModal';
 import { LoginModal } from './components/LoginModal';
 import { WebhookModal } from './components/WebhookModal';
 import { StoreConfigModal } from './components/StoreConfigModal';
@@ -63,6 +64,7 @@ export default function App() {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isWebhookOpen, setIsWebhookOpen] = useState(false);
   const [quickEditProduct, setQuickEditProduct] = useState<Product | null>(null);
+  const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
 
   // Notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -426,7 +428,7 @@ export default function App() {
           <div className="text-xs text-[#64748B]">
             Mostrando <strong className="text-[#0F172A]">{displayProducts.length}</strong> de{' '}
             <strong className="text-[#0F172A]">{vendorProducts.length}</strong> productos de{' '}
-            <strong className="text-[#5B3294]">{currentVendor.storeName}</strong>
+            <strong className="text-[#EA580C]">{currentVendor.storeName}</strong>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -434,16 +436,16 @@ export default function App() {
             <button
               onClick={handleDownloadCsv}
               disabled={displayProducts.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#F8FAFC] active:bg-[#F1F5F9] text-[#0F172A] border border-[#CBD5E1] hover:border-[#5B3294] text-xs font-bold rounded-lg transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#F8FAFC] active:bg-[#F1F5F9] text-[#0F172A] border border-[#CBD5E1] hover:border-[#FF5A00] text-xs font-bold rounded-lg transition-all cursor-pointer shadow-2xs disabled:opacity-50"
               title="Descargar lista filtrada en archivo CSV para auditoría offline de inventario"
             >
-              <Download className="w-3.5 h-3.5 text-[#5B3294]" />
+              <Download className="w-3.5 h-3.5 text-[#EA580C]" />
               <span>Descargar CSV ({displayProducts.length})</span>
             </button>
 
             <button
               onClick={handleAddNewProduct}
-              className="flex items-center gap-1 px-3 py-1.5 bg-[#43167C] hover:bg-[#5B3294] text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-xs"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
               title="Añadir nuevo producto a tu tienda"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -462,12 +464,13 @@ export default function App() {
                 config={config}
                 onUpdateProduct={handleUpdateProduct}
                 onOpenQuickEdit={(p) => setQuickEditProduct(p)}
+                onShareProduct={(p) => setSharingProduct(p)}
               />
             ))}
           </div>
         ) : (
           <div className="bg-white rounded-2xl border border-[#E2E8F0] p-8 text-center max-w-md mx-auto my-8 space-y-3">
-            <div className="w-12 h-12 bg-[#FAF8FF] text-[#5B3294] rounded-full flex items-center justify-center mx-auto">
+            <div className="w-12 h-12 bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] rounded-full flex items-center justify-center mx-auto">
               <PackageSearch className="w-6 h-6" />
             </div>
             <h3 className="font-bold text-sm text-[#0F172A]">No se encontraron productos</h3>
@@ -480,7 +483,7 @@ export default function App() {
                 setStatusFilter('all');
                 setSelectedCategory('all');
               }}
-              className="px-4 py-2 bg-[#5B3294] text-white text-xs font-bold rounded-lg hover:bg-[#43167C] cursor-pointer"
+              className="px-4 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] hover:from-[#E64C00] hover:to-[#E67E00] text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs"
             >
               Restablecer filtros
             </button>
@@ -507,6 +510,14 @@ export default function App() {
         isOpen={!!quickEditProduct}
         onClose={() => setQuickEditProduct(null)}
         onSave={handleUpdateProduct}
+      />
+
+      <ShareProductModal
+        product={sharingProduct}
+        config={config}
+        isOpen={!!sharingProduct}
+        onClose={() => setSharingProduct(null)}
+        onShowToast={addToast}
       />
 
       <LoginModal

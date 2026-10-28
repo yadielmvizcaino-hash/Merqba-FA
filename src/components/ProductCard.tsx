@@ -7,6 +7,7 @@ import {
   Plus,
   Upload,
   ExternalLink,
+  Share2,
 } from 'lucide-react';
 import { Product, StoreConfig } from '../types';
 
@@ -15,6 +16,7 @@ interface ProductCardProps {
   config: StoreConfig;
   onUpdateProduct: (updated: Product) => void;
   onOpenQuickEdit: (product: Product) => void;
+  onShareProduct: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -22,6 +24,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   config,
   onUpdateProduct,
   onOpenQuickEdit,
+  onShareProduct,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -175,7 +178,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         isOutOfStock
           ? 'border-[#FECACA] bg-[#FFFBFB]'
           : product.isModifiedLocally
-          ? 'border-[#D7BAFF] ring-1 ring-[#5B3294]/30'
+          ? 'border-[#FDBA74] ring-1 ring-[#FF5A00]/30'
           : 'border-[#E2E8F0] hover:border-[#CBD5E1]'
       } p-3 sm:p-4`}
     >
@@ -191,8 +194,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
       {/* Modified pill indicator */}
       {product.isModifiedLocally && (
-        <div className="absolute -top-2.5 right-3 bg-[#43167C] text-[#EDDCFF] text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1 z-10">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#F59E0B] animate-ping"></span>
+        <div className="absolute -top-2.5 right-3 bg-[#0B0E14] text-[#FFA000] border border-[#FF5A00]/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1 z-10">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] animate-ping"></span>
           Cambio local pendiente
         </div>
       )}
@@ -234,7 +237,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="mt-1 w-full text-[10px] text-[#5B3294] font-semibold flex items-center justify-center gap-1 hover:underline cursor-pointer sm:hidden"
+              className="mt-1 w-full text-[10px] text-[#EA580C] font-semibold flex items-center justify-center gap-1 hover:underline cursor-pointer sm:hidden"
             >
               <Upload className="w-3 h-3" />
               <span>Galería</span>
@@ -253,11 +256,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                     onChange={(e) => setTempTitle(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && handleSaveTitle()}
                     autoFocus
-                    className="w-full text-xs sm:text-sm font-bold text-[#0F172A] bg-[#FAF8FF] border border-[#5B3294] rounded px-2 py-1 focus:outline-none ring-2 ring-[#5B3294]/20"
+                    className="w-full text-xs sm:text-sm font-bold text-[#0F172A] bg-[#FFF7ED] border border-[#FF5A00] rounded px-2 py-1 focus:outline-none ring-2 ring-[#FF5A00]/20"
                   />
                   <button
                     onClick={handleSaveTitle}
-                    className="p-1.5 bg-[#5B3294] text-white rounded hover:bg-[#43167C] cursor-pointer"
+                    className="p-1.5 bg-[#FF5A00] text-white rounded hover:bg-[#E64C00] cursor-pointer"
                     title="Guardar nombre"
                   >
                     <Check className="w-3.5 h-3.5" />
@@ -270,7 +273,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       setTempTitle(product.name);
                       setIsEditingTitle(true);
                     }}
-                    className="text-xs sm:text-sm md:text-base font-bold text-[#0F172A] hover:text-[#5B3294] cursor-pointer line-clamp-2 leading-snug tracking-tight"
+                    className="text-xs sm:text-sm md:text-base font-bold text-[#0F172A] hover:text-[#FF5A00] cursor-pointer line-clamp-2 leading-snug tracking-tight"
                     title="Clic para editar nombre del producto"
                   >
                     {product.name}
@@ -280,7 +283,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       setTempTitle(product.name);
                       setIsEditingTitle(true);
                     }}
-                    className="opacity-40 group-hover/title:opacity-100 p-1 text-[#475569] hover:text-[#5B3294] cursor-pointer shrink-0"
+                    className="opacity-40 group-hover/title:opacity-100 p-1 text-[#475569] hover:text-[#FF5A00] cursor-pointer shrink-0"
                     title="Editar nombre"
                   >
                     <Edit2 className="w-3.5 h-3.5" />
@@ -297,7 +300,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <span className="text-[#64748B] font-mono text-[10px] sm:text-[11px]">
                 SKU: {product.sku}
               </span>
-              <span className="text-[#5B3294] font-medium bg-[#F5F3FF] px-1.5 py-0.5 rounded text-[10px] sm:text-[11px]">
+              <span className="text-[#EA580C] font-medium bg-[#FFF7ED] border border-[#FED7AA] px-1.5 py-0.5 rounded text-[10px] sm:text-[11px]">
                 {product.category}
               </span>
             </div>
@@ -316,11 +319,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       onChange={(e) => setTempPrice(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && handleSavePrice()}
                       autoFocus
-                      className="w-20 text-xs sm:text-sm font-bold text-[#0F172A] bg-[#FAF8FF] border border-[#5B3294] rounded px-1.5 py-0.5 focus:outline-none ring-1 ring-[#5B3294]/20 tabular-nums"
+                      className="w-20 text-xs sm:text-sm font-bold text-[#0F172A] bg-[#FFF7ED] border border-[#FF5A00] rounded px-1.5 py-0.5 focus:outline-none ring-1 ring-[#FF5A00]/20 tabular-nums"
                     />
                     <button
                       onClick={handleSavePrice}
-                      className="p-1 bg-[#10B981] text-white rounded hover:bg-[#006C49] cursor-pointer"
+                      className="p-1 bg-[#10B981] text-white rounded hover:bg-[#059669] cursor-pointer"
                       title="Confirmar precio"
                     >
                       <Check className="w-3 h-3" />
@@ -332,7 +335,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       setTempPrice(product.price.toString());
                       setIsEditingPrice(true);
                     }}
-                    className="flex items-center gap-1 text-sm sm:text-base font-extrabold text-[#0F172A] hover:text-[#5B3294] px-1.5 py-0.5 rounded hover:bg-[#F1F5F9] cursor-pointer tabular-nums"
+                    className="flex items-center gap-1 text-sm sm:text-base font-extrabold text-[#0F172A] hover:text-[#FF5A00] px-1.5 py-0.5 rounded hover:bg-[#F1F5F9] cursor-pointer tabular-nums"
                     title="Clic para editar precio"
                   >
                     <span>{config.currencySymbol}{product.price.toFixed(2)}</span>
@@ -347,13 +350,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 </span>
               )}
 
-              <button
-                onClick={() => onOpenQuickEdit(product)}
-                className="text-xs text-[#5B3294] hover:text-[#43167C] font-semibold hover:underline flex items-center gap-0.5 cursor-pointer ml-auto sm:ml-2"
-              >
-                <span>Detalles</span>
-                <ExternalLink className="w-3 h-3" />
-              </button>
+              <div className="flex items-center gap-1.5 ml-auto sm:ml-2">
+                {/* Share on Social Media Button */}
+                <button
+                  type="button"
+                  onClick={() => onShareProduct(product)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-[#EA580C] hover:text-white bg-[#FFF7ED] hover:bg-gradient-to-r hover:from-[#FF5A00] hover:to-[#FF8C00] border border-[#FED7AA] rounded-lg transition-all cursor-pointer shadow-2xs active:scale-95"
+                  title="Compartir producto en redes sociales (WhatsApp, Facebook, X, Telegram)"
+                  aria-label={`Compartir ${product.name} en redes sociales`}
+                >
+                  <Share2 className="w-3.5 h-3.5" />
+                  <span>Compartir</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onOpenQuickEdit(product)}
+                  className="text-xs text-[#64748B] hover:text-[#EA580C] font-semibold hover:underline flex items-center gap-0.5 cursor-pointer px-1 py-1"
+                >
+                  <span>Detalles</span>
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -433,7 +451,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               onClick={handleToggleStockStatus}
               role="switch"
               aria-checked={!isOutOfStock}
-              className={`relative inline-flex h-[26px] w-[46px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#5B3294] ${
+              className={`relative inline-flex h-[26px] w-[46px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#FF5A00] ${
                 !isOutOfStock ? 'bg-[#10B981]' : 'bg-[#CBD5E1]'
               }`}
               title={!isOutOfStock ? 'Interruptor: En Stock (clic para agotar)' : 'Interruptor: Agotado (clic para activar)'}

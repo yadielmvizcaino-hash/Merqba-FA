@@ -56,21 +56,29 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] overflow-hidden max-h-[90vh] flex flex-col">
         {/* Modal Header */}
-        <div className="px-5 py-4 bg-[#43167C] text-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-[#5B3294] rounded-lg">
-              <Store className="w-5 h-5 text-purple-200" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold">Iniciar Sesión en Merqba FA</h2>
-              <p className="text-[11px] text-purple-200">
+        <div className="px-5 py-4 bg-[#0B0E14] text-white flex items-center justify-between border-b border-[#1E2530]">
+          <div className="flex items-center gap-3">
+            <img
+              src="/assets/aistudio/logotipo_merqba_8e430d75.png"
+              alt="Merqba"
+              className="h-8 object-contain"
+            />
+            <div className="border-l border-white/20 pl-2.5">
+              <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5">
+                <span>Acceso Vendedor</span>
+                <span className="text-[10px] font-extrabold uppercase bg-gradient-to-r from-[#FF5A00] to-[#FFA000] text-black px-1.5 py-0.2 rounded">
+                  FA
+                </span>
+              </h2>
+              <p className="text-[11px] text-[#FFA000]">
                 Filtro por vendedor: solo verás y gestionarás tus productos
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-purple-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1.5 text-[#94A3B8] hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            title="Cerrar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -86,7 +94,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 </span>
                 <button
                   onClick={() => setIsCustomMode(true)}
-                  className="text-xs text-[#5B3294] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-[#EA580C] font-semibold hover:underline flex items-center gap-1 cursor-pointer"
                 >
                   <PlusCircle className="w-3.5 h-3.5" />
                   <span>Otro Vendedor</span>
@@ -107,7 +115,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       }}
                       className={`w-full p-3 rounded-xl border text-left transition-all cursor-pointer flex items-center gap-3 ${
                         isCurrent
-                          ? 'border-[#5B3294] bg-[#FAF8FF] ring-2 ring-[#5B3294]/20 shadow-xs'
+                          ? 'border-[#FF5A00] bg-[#FFF7ED] ring-2 ring-[#FF5A00]/25 shadow-xs'
                           : 'border-[#E2E8F0] hover:border-[#CBD5E1] hover:bg-[#F8FAFC]'
                       }`}
                     >
@@ -122,20 +130,20 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                           <h3 className="font-bold text-xs sm:text-sm text-[#0F172A] truncate">
                             {vendor.storeName}
                           </h3>
-                          <span className="text-[10px] font-bold bg-[#EAEDFF] text-[#43167C] px-1.5 py-0.5 rounded">
+                          <span className="text-[10px] font-bold bg-[#0B0E14] text-[#FFA000] border border-[#FF5A00]/40 px-1.5 py-0.5 rounded">
                             ID: #{vendor.id}
                           </span>
                         </div>
                         <p className="text-[11px] text-[#475569] truncate">
                           {vendor.name} • {vendor.email}
                         </p>
-                        <p className="text-[10px] text-[#5B3294] font-medium mt-0.5">
+                        <p className="text-[10px] text-[#EA580C] font-semibold mt-0.5">
                           {vendorProductsCount} productos en catálogo
                         </p>
                       </div>
 
                       {isCurrent && (
-                        <CheckCircle2 className="w-5 h-5 text-[#5B3294] shrink-0" />
+                        <CheckCircle2 className="w-5 h-5 text-[#FF5A00] shrink-0" />
                       )}
                     </button>
                   );
@@ -151,7 +159,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCustomMode(false)}
-                  className="text-xs text-[#5B3294] hover:underline cursor-pointer"
+                  className="text-xs text-[#EA580C] hover:underline cursor-pointer"
                 >
                   Volver a la lista
                 </button>
@@ -167,7 +175,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   placeholder="Ej. Mi Tienda"
                   value={customStoreName}
                   onChange={(e) => setCustomStoreName(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/30"
                 />
               </div>
 
@@ -180,7 +188,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   placeholder="Ej. Juan Pérez"
                   value={customName}
                   onChange={(e) => setCustomName(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/30"
                 />
               </div>
 
@@ -193,7 +201,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   placeholder="vendedor@mitienda.com"
                   value={customEmail}
                   onChange={(e) => setCustomEmail(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/30"
                 />
               </div>
 
@@ -205,7 +213,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   type="number"
                   value={customId}
                   onChange={(e) => setCustomId(e.target.value)}
-                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                  className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/30"
                 />
               </div>
 
@@ -213,13 +221,13 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setIsCustomMode(false)}
-                  className="px-3 py-1.5 border border-[#CBD5E1] text-[#475569] text-xs font-semibold rounded-lg"
+                  className="px-3 py-1.5 border border-[#CBD5E1] text-[#475569] text-xs font-semibold rounded-lg hover:bg-[#F8FAFC] cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-[#5B3294] text-white text-xs font-bold rounded-lg hover:bg-[#43167C] flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] text-white text-xs font-bold rounded-lg hover:from-[#E64C00] hover:to-[#E68A00] flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <LogIn className="w-3.5 h-3.5" />
                   <span>Entrar como Vendedor</span>

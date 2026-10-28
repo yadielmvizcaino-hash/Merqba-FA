@@ -48,7 +48,7 @@ export const BottomMobileBar: React.FC<BottomMobileBarProps> = ({
           title="Descargar CSV para auditoría offline"
           aria-label="Exportar CSV"
         >
-          <Download className="w-4 h-4 text-[#5B3294]" />
+          <Download className="w-4 h-4 text-[#EA580C]" />
           <span className="hidden xs:inline text-[11px]">CSV</span>
         </button>
 
@@ -56,16 +56,16 @@ export const BottomMobileBar: React.FC<BottomMobileBarProps> = ({
         <button
           onClick={onApplyChanges}
           disabled={isDispatching}
-          className={`flex items-center justify-center gap-1.5 px-3.5 py-2 text-white font-bold text-xs rounded-xl shadow-sm transition-all cursor-pointer h-10 shrink-0 ${
+          className={`flex items-center justify-center gap-1.5 px-4 py-2 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer h-10 shrink-0 ${
             pendingCount > 0
-              ? 'bg-[#5B3294] ring-2 ring-[#cca8ff] active:scale-95'
-              : 'bg-[#5B3294] active:bg-[#43167C]'
+              ? 'bg-gradient-to-r from-[#FF5A00] to-[#FFA000] ring-2 ring-[#FFA000]/50 active:scale-95 shadow-[#FF5A00]/25'
+              : 'bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] active:opacity-90'
           } disabled:opacity-60`}
         >
           <Send className={`w-3.5 h-3.5 ${isDispatching ? 'animate-bounce' : ''}`} />
           <span>Aplicar</span>
           {pendingCount > 0 && (
-            <span className="bg-[#F59E0B] text-[#131B2E] text-[10px] font-black px-1.5 py-0.2 rounded-full tabular-nums">
+            <span className="bg-[#0B0E14] text-[#FFA000] border border-[#FFA000]/40 text-[10px] font-black px-1.5 py-0.2 rounded-full tabular-nums">
               {pendingCount}
             </span>
           )}

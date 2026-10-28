@@ -85,16 +85,16 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
       <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] overflow-hidden max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="px-5 py-4 bg-[#5B3294] text-white flex items-center justify-between">
+        <div className="px-5 py-4 bg-[#0B0E14] text-white flex items-center justify-between border-b border-[#1E2530]">
           <div className="min-w-0">
-            <span className="text-[10px] font-bold tracking-wider uppercase text-purple-200">
+            <span className="text-[10px] font-bold tracking-wider uppercase text-[#FFA000]">
               Edición Rápida • ID: #{product.id}
             </span>
-            <h2 className="text-base font-bold truncate">{product.name}</h2>
+            <h2 className="text-base font-bold truncate text-white">{product.name}</h2>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-purple-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1.5 text-[#94A3B8] hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
             title="Cerrar"
           >
             <X className="w-5 h-5" />
@@ -124,9 +124,9 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2 px-3 border border-[#CBD5E1] hover:border-[#5B3294] bg-[#F8FAFC] hover:bg-white text-xs font-semibold text-[#0F172A] rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  className="w-full py-2 px-3 border border-[#CBD5E1] hover:border-[#FF5A00] bg-[#F8FAFC] hover:bg-white text-xs font-semibold text-[#0F172A] rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
                 >
-                  <Upload className="w-4 h-4 text-[#5B3294]" />
+                  <Upload className="w-4 h-4 text-[#FF5A00]" />
                   <span>Subir imagen desde galería</span>
                 </button>
                 <p className="text-[11px] text-[#64748B] mt-1">
@@ -146,7 +146,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm text-[#0F172A] focus:outline-none focus:border-[#5B3294] focus:ring-2 focus:ring-[#5B3294]/15"
+              className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-2 focus:ring-[#FF5A00]/15"
             />
           </div>
 
@@ -166,7 +166,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                   required
                   value={price}
                   onChange={(e) => setPrice(e.target.value)}
-                  className="w-full pl-7 pr-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm font-bold text-[#0F172A] focus:outline-none focus:border-[#5B3294] tabular-nums"
+                  className="w-full pl-7 pr-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm font-bold text-[#0F172A] focus:outline-none focus:border-[#FF5A00] tabular-nums"
                 />
               </div>
             </div>
@@ -184,14 +184,14 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                   step="0.01"
                   value={regularPrice}
                   onChange={(e) => setRegularPrice(e.target.value)}
-                  className="w-full pl-7 pr-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm text-[#0F172A] focus:outline-none focus:border-[#5B3294] tabular-nums"
+                  className="w-full pl-7 pr-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm text-[#0F172A] focus:outline-none focus:border-[#FF5A00] tabular-nums"
                 />
               </div>
             </div>
           </div>
 
           {/* Stock Quantity & Switch */}
-          <div className="bg-[#FAF8FF] border border-[#D7BAFF] rounded-xl p-3.5 space-y-3">
+          <div className="bg-[#FFF7ED] border border-[#FED7AA] rounded-xl p-3.5 space-y-3">
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold text-[#0F172A]">Estado de Inventario</span>
@@ -214,7 +214,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
               </button>
             </div>
 
-            <div className="flex items-center justify-between pt-2 border-t border-[#E2E8F0]">
+            <div className="flex items-center justify-between pt-2 border-t border-[#FED7AA]">
               <label className="text-xs font-bold text-[#0F172A]">
                 Cantidad en Stock
               </label>
@@ -231,7 +231,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                     setStockStatus('outofstock');
                   }
                 }}
-                className="w-24 text-center px-2 py-1.5 bg-white border border-[#CBD5E1] rounded-lg text-sm font-bold text-[#0F172A] focus:outline-none focus:border-[#5B3294] tabular-nums"
+                className="w-24 text-center px-2 py-1.5 bg-white border border-[#CBD5E1] rounded-lg text-sm font-bold text-[#0F172A] focus:outline-none focus:border-[#FF5A00] tabular-nums"
               />
             </div>
           </div>
@@ -246,7 +246,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                 type="text"
                 value={sku}
                 onChange={(e) => setSku(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#FF5A00]"
               />
             </div>
 
@@ -258,7 +258,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                 type="text"
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#FF5A00]"
               />
             </div>
           </div>
@@ -274,7 +274,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#5B3294] hover:bg-[#43167C] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
               <Check className="w-4 h-4" />
               <span>Guardar Cambios</span>

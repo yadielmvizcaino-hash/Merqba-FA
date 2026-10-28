@@ -38,21 +38,22 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] overflow-hidden max-h-[90vh] flex flex-col">
         {/* Header */}
-        <div className="px-5 py-4 bg-[#43167C] text-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-[#5B3294] rounded-lg">
-              <Settings className="w-5 h-5 text-purple-200" />
+        <div className="px-5 py-4 bg-[#0B0E14] text-white flex items-center justify-between border-b border-[#1E2530]">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-gradient-to-br from-[#FF5A00] to-[#FFA000] rounded-xl text-black shadow-xs">
+              <Settings className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h2 className="text-base font-bold">Conexión Merqba FA</h2>
-              <p className="text-[11px] text-purple-200">
+              <h2 className="text-base font-bold text-white">Conexión Merqba FA</h2>
+              <p className="text-[11px] text-[#FFA000]">
                 Estado de la tienda y sincronización
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-purple-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1.5 text-[#94A3B8] hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            title="Cerrar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -93,7 +94,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
               value={webhookUrl}
               onChange={(e) => setWebhookUrl(e.target.value)}
               placeholder="https://merqba.com/wp-json/merqba/v1/sync"
-              className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+              className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/25"
             />
             <p className="text-[11px] text-[#64748B] mt-1">
               Receptor al que se disparan las actualizaciones de stock y precios al pulsar &apos;Aplicar Cambios&apos;.
@@ -110,7 +111,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                 type="text"
                 value={currencySymbol}
                 onChange={(e) => setCurrencySymbol(e.target.value)}
-                className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                className="w-full px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-bold text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/25"
               />
             </div>
 
@@ -124,7 +125,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                     type="checkbox"
                     checked={realtimeSync}
                     onChange={(e) => setRealtimeSync(e.target.checked)}
-                    className="w-4 h-4 rounded text-[#10B981] focus:ring-[#10B981] border-[#CBD5E1]"
+                    className="w-4 h-4 rounded text-[#10B981] focus:ring-[#FF5A00] border-[#CBD5E1]"
                   />
                   <span>Disparo continuo</span>
                 </label>
@@ -168,7 +169,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#5B3294] hover:bg-[#43167C] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
+              className="px-5 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
             >
               <Check className="w-4 h-4" />
               <span>Guardar Preferencias</span>

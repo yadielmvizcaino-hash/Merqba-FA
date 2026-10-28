@@ -71,21 +71,22 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
       <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] overflow-hidden max-h-[92vh] flex flex-col">
         {/* Header */}
-        <div className="px-5 py-4 bg-[#43167C] text-white flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-[#5B3294] rounded-lg">
-              <Activity className="w-5 h-5 text-purple-200" />
+        <div className="px-5 py-4 bg-[#0B0E14] text-white flex items-center justify-between border-b border-[#1E2530]">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-gradient-to-br from-[#FF5A00] to-[#FFA000] rounded-xl text-black shadow-xs">
+              <Activity className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h2 className="text-base font-bold">Diagnóstico de Webhook & Payload Merqba FA</h2>
-              <p className="text-[11px] text-purple-200">
+              <h2 className="text-base font-bold text-white">Diagnóstico de Webhook & Payload Merqba FA</h2>
+              <p className="text-[11px] text-[#FFA000]">
                 Disparado por el botón &apos;Aplicar Cambios&apos; en la esquina derecha
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1 text-purple-200 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1.5 text-[#94A3B8] hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            title="Cerrar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -97,7 +98,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
             onClick={() => setActiveTab('payload')}
             className={`py-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'payload'
-                ? 'border-[#5B3294] text-[#5B3294]'
+                ? 'border-[#FF5A00] text-[#FF5A00]'
                 : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
             }`}
           >
@@ -109,7 +110,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
             onClick={() => setActiveTab('logs')}
             className={`py-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'logs'
-                ? 'border-[#5B3294] text-[#5B3294]'
+                ? 'border-[#FF5A00] text-[#FF5A00]'
                 : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
             }`}
           >
@@ -121,7 +122,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
             onClick={() => setActiveTab('config')}
             className={`py-2.5 px-3 border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'config'
-                ? 'border-[#5B3294] text-[#5B3294]'
+                ? 'border-[#FF5A00] text-[#FF5A00]'
                 : 'border-transparent text-[#64748B] hover:text-[#0F172A]'
             }`}
           >
@@ -151,7 +152,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
                   <button
                     onClick={onTriggerWebhook}
                     disabled={isDispatching}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-[#5B3294] hover:bg-[#43167C] text-xs font-bold text-white rounded-lg transition-colors cursor-pointer disabled:opacity-60"
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-xs font-bold text-white rounded-lg transition-colors cursor-pointer disabled:opacity-60 shadow-xs"
                   >
                     <Send className={`w-3.5 h-3.5 ${isDispatching ? 'animate-bounce' : ''}`} />
                     <span>Disparar Ahora</span>
@@ -161,7 +162,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
 
               {/* JSON Payload viewer */}
               <div className="relative">
-                <pre className="bg-[#0F172A] text-[#E2E8F0] p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-[380px] leading-relaxed selection:bg-[#5B3294]">
+                <pre className="bg-[#0B0E14] text-[#E2E8F0] border border-[#1E2530] p-4 rounded-xl text-xs font-mono overflow-x-auto max-h-[380px] leading-relaxed selection:bg-[#FF5A00]">
                   {payloadString}
                 </pre>
               </div>
@@ -232,11 +233,11 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
                     value={tempWebhookUrl}
                     onChange={(e) => setTempWebhookUrl(e.target.value)}
                     placeholder="https://webhook.site/tu-endpoint o https://tudominio.com/api/webhook"
-                    className="flex-1 px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#5B3294]"
+                    className="flex-1 px-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/25"
                   />
                   <button
                     onClick={handleSaveWebhookUrl}
-                    className="px-4 py-2 bg-[#5B3294] text-white text-xs font-bold rounded-lg hover:bg-[#43167C] cursor-pointer"
+                    className="px-4 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] hover:from-[#E64C00] hover:to-[#E67E00] text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs"
                   >
                     Guardar
                   </button>
@@ -247,10 +248,10 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
               </div>
 
               {/* Real-time sync option */}
-              <div className="p-3.5 bg-[#FAF8FF] border border-[#D7BAFF] rounded-xl flex items-center justify-between">
+              <div className="p-3.5 bg-[#FFF7ED] border border-[#FED7AA] rounded-xl flex items-center justify-between">
                 <div>
                   <span className="text-xs font-bold text-[#0F172A] flex items-center gap-1.5">
-                    <Zap className="w-4 h-4 text-[#5B3294]" />
+                    <Zap className="w-4 h-4 text-[#EA580C]" />
                     Sincronización en Tiempo Real
                   </span>
                   <p className="text-[11px] text-[#475569] mt-0.5">
@@ -261,7 +262,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleRealtime}
-                  className={`relative inline-flex h-[26px] w-[46px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  className={`relative inline-flex h-[26px] w-[46px] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[#FF5A00] ${
                     config.realtimeSync ? 'bg-[#10B981]' : 'bg-[#CBD5E1]'
                   }`}
                 >

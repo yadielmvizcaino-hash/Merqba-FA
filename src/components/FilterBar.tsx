@@ -46,7 +46,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
               value={searchQuery}
               onChange={(e) => onSearchChange(e.target.value)}
               placeholder="Buscar por nombre, ID (#) o SKU..."
-              className="w-full pl-9 pr-9 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs sm:text-sm text-[#0F172A] placeholder-[#7C7482] focus:outline-none focus:border-[#5B3294] focus:ring-2 focus:ring-[#5B3294]/15 transition-all"
+              className="w-full pl-9 pr-9 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs sm:text-sm text-[#0F172A] placeholder-[#7C7482] focus:outline-none focus:border-[#FF5A00] focus:ring-2 focus:ring-[#FF5A00]/20 transition-all"
             />
             {searchQuery && (
               <button
@@ -62,7 +62,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           {/* Sort dropdown */}
           <div className="relative shrink-0">
             <div className="flex items-center bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg px-2.5 py-2 text-xs sm:text-sm">
-              <ArrowUpDown className="w-3.5 h-3.5 text-[#5B3294] mr-1.5 shrink-0" />
+              <ArrowUpDown className="w-3.5 h-3.5 text-[#FF5A00] mr-1.5 shrink-0" />
               <select
                 value={sortOption}
                 onChange={(e) => onSortChange(e.target.value as SortOption)}
@@ -89,7 +89,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             onClick={() => onStatusFilterChange('all')}
             className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 transition-all cursor-pointer border ${
               statusFilter === 'all'
-                ? 'bg-[#5B3294] text-white border-[#5B3294] shadow-xs'
+                ? 'bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] text-white border-[#FF5A00] shadow-xs'
                 : 'bg-[#F8FAFC] text-[#475569] border-[#E2E8F0] hover:bg-[#F1F5F9]'
             }`}
           >
@@ -100,8 +100,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             onClick={() => onStatusFilterChange('instock')}
             className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 transition-all cursor-pointer border ${
               statusFilter === 'instock'
-                ? 'bg-[#006C49] text-white border-[#006C49] shadow-xs'
-                : 'bg-[#F8FAFC] text-[#006C49] border-[#E2E8F0] hover:bg-[#ECFDF5]'
+                ? 'bg-[#10B981] text-white border-[#10B981] shadow-xs'
+                : 'bg-[#F8FAFC] text-[#059669] border-[#E2E8F0] hover:bg-[#ECFDF5]'
             }`}
           >
             En Stock
@@ -133,8 +133,8 @@ export const FilterBar: React.FC<FilterBarProps> = ({
             onClick={() => onStatusFilterChange('modified')}
             className={`px-3 py-1.5 rounded-lg font-semibold shrink-0 transition-all cursor-pointer border ${
               statusFilter === 'modified'
-                ? 'bg-[#43167C] text-white border-[#43167C] shadow-xs'
-                : 'bg-[#F8FAFC] text-[#43167C] border-[#E2E8F0] hover:bg-[#F3E8FF]'
+                ? 'bg-[#0B0E14] text-[#FFA000] border-[#FF5A00]/50 shadow-xs'
+                : 'bg-[#FFF7ED] text-[#EA580C] border-[#FED7AA] hover:bg-[#FFEDD5]'
             }`}
           >
             Con Cambios

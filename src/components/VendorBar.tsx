@@ -18,13 +18,13 @@ export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVe
       <div className="max-w-[2400px] mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3">
         {/* Vendor Banner Info */}
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-[#EAEDFF] text-[#43167C] rounded-lg shrink-0">
-            <Store className="w-5 h-5" />
+          <div className="p-2 bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] rounded-xl shrink-0 shadow-2xs">
+            <Store className="w-5 h-5 text-[#FF5A00]" />
           </div>
 
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-bold text-[#0F172A] uppercase tracking-wider">
+              <span className="text-xs font-black text-[#0F172A] uppercase tracking-wider">
                 Merqba FA • Panel de Vendedor
               </span>
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-[#ECFDF5] text-[#065F46] px-2 py-0.5 rounded-full border border-[#A7F3D0]">
@@ -47,7 +47,7 @@ export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVe
         {/* Quick Statistics chips */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0 scrollbar-none">
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#F8FAFC] border border-[#E2E8F0] rounded-lg text-xs shrink-0">
-            <Layers className="w-4 h-4 text-[#5B3294]" />
+            <Layers className="w-4 h-4 text-[#EA580C]" />
             <span className="text-[#475569]">Total:</span>
             <span className="font-bold text-[#0F172A] tabular-nums">{products.length}</span>
           </div>
@@ -65,8 +65,8 @@ export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVe
           </div>
 
           {modifiedCount > 0 && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FEF3C7] border border-[#FDE68A] rounded-lg text-xs text-[#92400E] shrink-0 font-medium">
-              <span className="w-2 h-2 rounded-full bg-[#F59E0B] animate-ping"></span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#FFF7ED] border border-[#FDBA74] rounded-lg text-xs text-[#C2410C] shrink-0 font-medium">
+              <span className="w-2 h-2 rounded-full bg-[#FF5A00] animate-ping"></span>
               <span>Por guardar:</span>
               <span className="font-bold tabular-nums">{modifiedCount}</span>
             </div>
@@ -74,7 +74,7 @@ export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVe
 
           <button
             onClick={onOpenVendorLogin}
-            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-[#5B3294] hover:bg-[#F3E8FF] rounded-lg font-semibold transition-colors cursor-pointer shrink-0 ml-auto border border-[#E9D5FF]"
+            className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-[#EA580C] hover:bg-[#FFF7ED] rounded-lg font-bold transition-colors cursor-pointer shrink-0 ml-auto border border-[#FED7AA]"
           >
             <UserCheck className="w-3.5 h-3.5" />
             <span>Cambiar</span>
