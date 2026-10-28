@@ -318,31 +318,140 @@ app.get('/api/woocommerce/products', async (req, res) => {
   }
 });
 
-// 3. Batch Update Products on WooCommerce REST API
+// 3. Create Product on WooCommerce REST API
+app.post('/api/woocommerce/products', async (req, res) => {
+  const productData = req.body;
+  const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products`;
+
+  const wcPayload = {
+    name: productData.name || 'Nuevo Producto',
+    type: 'simple',
+    regular_price: String(productData.regularPrice || productData.price || '0'),
+    sale_price: productData.salePrice !== undefined && productData.salePrice !== '' ? String(productData.salePrice) : undefined,
+    description: productData.description || '',
+    sku: productData.sku || `SKU-${Date.now().toString().slice(-6)}`,
+    manage_stock: Boolean(productData.manageStock),
+    stock_quantity: Number(productData.stockQuantity || 0),
+    stock_status: Number(productData.stockQuantity || 0) > 0 ? 'instock' : 'outofstock',
+    images: productData.imageUrl ? [{ src: productData.imageUrl }] : undefined,
+    categories: productData.category ? [{ name: productData.category }] : undefined,
+  };
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12000);
+
+    const response = await fetch(targetUrl, {
+      method: 'POST',
+      headers: {
+        Authorization: getWcAuthHeader(),
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'MerqbaFA/1.0',
+      },
+      body: JSON.stringify(wcPayload),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const item = await response.json();
+      const storeId = productData.vendorId || 1;
+      const priceNum = item.price ? parseFloat(item.price) : 0;
+      const regularNum = item.regular_price ? parseFloat(item.regular_price) : priceNum;
+      const saleNum = item.sale_price ? parseFloat(item.sale_price) : undefined;
+      const qty = item.stock_quantity !== null && item.stock_quantity !== undefined ? Number(item.stock_quantity) : 0;
+
+      const mappedProduct = {
+        id: item.id,
+        vendorId: storeId,
+        name: item.name,
+        sku: item.sku || `SKU-${item.id}`,
+        regularPrice: regularNum,
+        salePrice: saleNum,
+        price: priceNum,
+        stockQuantity: qty,
+        stockStatus: item.stock_status || (qty > 0 ? 'instock' : 'outofstock'),
+        manageStock: Boolean(item.manage_stock),
+        imageUrl: item.images?.[0]?.src || productData.imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500',
+        category: item.categories?.[0]?.name || productData.category || 'General',
+        tags: [],
+        lastModified: item.date_modified || new Date().toISOString(),
+        isModifiedLocally: false,
+        isNew: false,
+      };
+
+      return res.json({
+        success: true,
+        product: mappedProduct,
+        message: 'Producto creado exitosamente en WooCommerce',
+      });
+    } else {
+      const errText = await response.text();
+      console.warn(`WooCommerce create product failed with status ${response.status}:`, errText);
+      return res.json({
+        success: true,
+        simulated: true,
+        product: { ...productData, isModifiedLocally: true },
+        message: 'Producto guardado localmente (WooCommerce respondió con error al crear).',
+      });
+    }
+  } catch (err: any) {
+    console.error('Create product network error:', err.message);
+    return res.json({
+      success: true,
+      simulated: true,
+      product: { ...productData, isModifiedLocally: true },
+      message: 'Producto guardado localmente (sin conexión a internet con WooCommerce).',
+    });
+  }
+});
+
+// 4. Batch Create & Update Products on WooCommerce REST API
 app.post('/api/woocommerce/batch', async (req, res) => {
   const { products } = req.body;
   if (!Array.isArray(products) || products.length === 0) {
-    return res.status(400).json({ error: 'No products provided for batch update' });
+    return res.status(400).json({ error: 'No products provided for batch sync' });
   }
 
-  const batchPayload = {
-    update: products.map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      regular_price: p.regularPrice !== undefined ? String(p.regularPrice) : undefined,
-      sale_price: p.salePrice !== undefined ? String(p.salePrice) : undefined,
-      price: String(p.price),
-      manage_stock: true,
-      stock_quantity: p.stockQuantity,
-      stock_status: p.stockQuantity > 0 && p.stockStatus === 'instock' ? 'instock' : 'outofstock',
-    })),
-  };
+  const createItems = products.filter((p: any) => p.isNew || p.id > 50000 || String(p.id).length > 6).map((p: any) => ({
+    name: p.name,
+    regular_price: String(p.regularPrice !== undefined ? p.regularPrice : p.price),
+    sale_price: p.salePrice !== undefined && p.salePrice !== '' ? String(p.salePrice) : undefined,
+    price: String(p.price),
+    manage_stock: true,
+    stock_quantity: p.stockQuantity,
+    stock_status: p.stockQuantity > 0 ? 'instock' : 'outofstock',
+    sku: p.sku,
+    images: p.imageUrl ? [{ src: p.imageUrl }] : undefined,
+    categories: p.category ? [{ name: p.category }] : undefined,
+  }));
+
+  const updateItems = products.filter((p: any) => !p.isNew && p.id <= 50000 && String(p.id).length <= 6).map((p: any) => ({
+    id: p.id,
+    name: p.name,
+    regular_price: p.regularPrice !== undefined ? String(p.regularPrice) : undefined,
+    sale_price: p.salePrice !== undefined && p.salePrice !== '' ? String(p.salePrice) : undefined,
+    price: String(p.price),
+    manage_stock: true,
+    stock_quantity: p.stockQuantity,
+    stock_status: p.stockQuantity > 0 && p.stockStatus === 'instock' ? 'instock' : 'outofstock',
+  }));
+
+  const batchPayload: any = {};
+  if (createItems.length > 0) batchPayload.create = createItems;
+  if (updateItems.length > 0) batchPayload.update = updateItems;
+
+  if (Object.keys(batchPayload).length === 0) {
+    return res.json({ success: true, message: 'No changes to batch sync' });
+  }
 
   const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/batch`;
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 12000);
 
     const response = await fetch(targetUrl, {
       method: 'POST',
@@ -363,16 +472,17 @@ app.post('/api/woocommerce/batch', async (req, res) => {
       return res.json({
         success: true,
         statusCode: response.status,
-        message: 'Lote de productos sincronizado con WooCommerce',
+        message: 'Lote de productos (creación y actualización) sincronizado con WooCommerce',
         data,
       });
     } else {
-      console.warn(`WooCommerce batch replied with HTTP ${response.status}`);
+      const errText = await response.text();
+      console.warn(`WooCommerce batch replied with HTTP ${response.status}:`, errText);
       return res.json({
         success: true,
         statusCode: 200,
         simulated: true,
-        message: `Cambios aplicados localmente y preparados para reintento de conexión (HTTP ${response.status})`,
+        message: `Cambios aplicados localmente y listos para reintento (HTTP ${response.status})`,
       });
     }
   } catch (err: any) {

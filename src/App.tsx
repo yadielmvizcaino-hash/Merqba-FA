@@ -429,14 +429,14 @@ export default function App() {
     addToast('info', 'Catálogo Restaurado', 'Se han restablecido los datos iniciales de prueba.');
   };
 
-  // Create new product for current vendor
-  const handleAddNewProduct = () => {
-    const newId = Math.floor(Math.random() * 9000) + 1000;
+  // Create new product for current vendor and sync to WooCommerce
+  const handleAddNewProduct = async () => {
+    const tempId = Math.floor(Math.random() * 90000) + 10000;
     const newProduct: Product = {
-      id: newId,
+      id: tempId,
       vendorId: currentVendor.id,
-      name: 'Nuevo Producto ' + newId,
-      sku: 'SKU-' + newId,
+      name: 'Nuevo Producto ' + tempId,
+      sku: 'SKU-' + tempId,
       price: 29.99,
       regularPrice: 29.99,
       stockQuantity: 10,
@@ -445,12 +445,35 @@ export default function App() {
       imageUrl: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=500&auto=format&fit=crop&q=80',
       category: vendorCategories[0] || 'General',
       isModifiedLocally: true,
+      isNew: true,
       lastModified: new Date().toISOString(),
     };
 
     setProducts((prev) => [newProduct, ...prev]);
     setQuickEditProduct(newProduct);
-    addToast('success', 'Producto Creado', `Nuevo producto #${newId} listo para editar.`);
+    addToast('success', 'Producto Creado', `Nuevo producto #${tempId} creado y sincronizándose con WooCommerce...`);
+
+    try {
+      const res = await fetch('/api/woocommerce/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newProduct),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.product) {
+          setProducts((prev) =>
+            prev.map((p) => (p.id === tempId ? { ...data.product, isModifiedLocally: false, isNew: false } : p))
+          );
+          if (quickEditProduct?.id === tempId) {
+            setQuickEditProduct({ ...data.product, isModifiedLocally: false, isNew: false });
+          }
+          addToast('success', 'Sincronizado en WooCommerce', `¡Producto creado en WooCommerce con ID #${data.product.id}!`);
+        }
+      }
+    } catch (e) {
+      console.warn('Background create sync error:', e);
+    }
   };
 
   // Export current filtered product list to CSV for offline audits

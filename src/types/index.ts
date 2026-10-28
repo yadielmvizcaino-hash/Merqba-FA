@@ -30,6 +30,7 @@ export interface Product {
   tags?: string[];
   lastModified?: string;
   isModifiedLocally?: boolean;
+  isNew?: boolean;
 }
 
 export interface WebhookLog {

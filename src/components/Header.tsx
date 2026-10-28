@@ -85,7 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Left: Official Merqba Brand Logo & Vendor Identity */}
         <div className="flex items-center gap-2.5 sm:gap-4 min-w-0">
           {/* Official Brand Logo */}
-          <div className="flex items-center gap-2 pr-1.5 sm:pr-3 sm:border-r border-[#1E2530] shrink-0">
+          <div className="hidden sm:flex items-center gap-2 pr-1.5 sm:pr-3 sm:border-r border-[#1E2530] shrink-0">
             <img
               src="/assets/aistudio/logotipo_merqba_8e430d75.png"
               alt="merqba"
