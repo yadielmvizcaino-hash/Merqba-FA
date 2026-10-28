@@ -191,7 +191,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   Tiendas Disponibles ({vendors.length})
                 </span>
 
-                <div className="space-y-2.5">
+                <div className="max-h-[320px] overflow-y-auto pr-1 space-y-2.5">
                   {vendors.map((vendor) => {
                     const isCurrent = vendor.id === currentVendor.id;
                     const vendorProductsCount = products.filter((p) => p.vendorId === vendor.id).length;

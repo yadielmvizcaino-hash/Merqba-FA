@@ -41,7 +41,7 @@ app.post('/api/woocommerce/login', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({
       success: false,
-      message: 'Por favor, ingresa tu usuario o correo y tu contraseña de WooCommerce.',
+      message: 'Por favor, ingresa tu usuario o correo y tu contraseña de Merqba.',
     });
   }
 
@@ -49,8 +49,7 @@ app.post('/api/woocommerce/login', async (req, res) => {
   const cleanPass = String(password).trim();
 
   try {
-    // 1. Direct WooCommerce Form Authentication via /mi-cuenta/
-    // This executes real WordPress / WooCommerce password hashing verification, nonces, and session cookies
+    // 1. Direct Merqba Form Authentication via /mi-cuenta/
     let isWcSuccess = false;
     let wcErrorMessage: string | null = null;
 
@@ -93,10 +92,10 @@ app.post('/api/woocommerce/login', async (req, res) => {
         }
       }
     } catch (e: any) {
-      console.warn('WooCommerce form login check failed:', e?.message);
+      console.warn('Merqba form login check failed:', e?.message);
     }
 
-    // 2. Also try REST API Basic Auth check (for application passwords or Basic Auth plugin)
+    // 2. Also try REST API Basic Auth check
     if (!isWcSuccess) {
       try {
         const basicToken = Buffer.from(`${cleanUser}:${cleanPass}`).toString('base64');
@@ -116,11 +115,11 @@ app.post('/api/woocommerce/login', async (req, res) => {
       }
     }
 
-    // If authentication failed on WooCommerce, reject with the exact error message
+    // If authentication failed, reject with error message
     if (!isWcSuccess) {
       return res.status(401).json({
         success: false,
-        message: wcErrorMessage || 'Contraseña incorrecta. Por favor ingresa la contraseña válida de tu perfil en WooCommerce.',
+        message: wcErrorMessage || 'Contraseña incorrecta. Por favor ingresa la contraseña válida de tu perfil en Merqba.',
       });
     }
 
@@ -164,6 +163,71 @@ app.post('/api/woocommerce/login', async (req, res) => {
         storeUrl: `${WC_STORE_URL}/store/los-chanas-ferreter-a/`,
         phone: '+53 5 333 4455',
         address: 'Circunvalación e/ Roble y Autopista, Santa Clara, Cuba',
+      },
+      205: {
+        id: 205,
+        name: 'Mercado Central',
+        storeName: 'Mercado Central Merqba',
+        email: 'mercadocentral@merqba.com',
+        avatar: 'https://images.unsplash.com/photo-1534723452862-4c874018d66d?w=150&auto=format&fit=crop&q=80',
+        banner: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&auto=format&fit=crop&q=80',
+        rating: 4.9,
+        ratingCount: 82,
+        storeUrl: `${WC_STORE_URL}/store/mercado-central/`,
+        phone: '+53 5 444 5566',
+        address: 'Calle Cuba e/ Candelaria y San Pedro, Santa Clara',
+      },
+      312: {
+        id: 312,
+        name: 'El Encanto',
+        storeName: 'Boutique El Encanto',
+        email: 'elencanto@merqba.com',
+        avatar: 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=150&auto=format&fit=crop&q=80',
+        banner: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&auto=format&fit=crop&q=80',
+        rating: 4.7,
+        ratingCount: 28,
+        storeUrl: `${WC_STORE_URL}/store/el-encanto/`,
+        phone: '+53 5 555 6677',
+        address: 'Boulevard de Santa Clara, Villa Clara',
+      },
+      420: {
+        id: 420,
+        name: 'TuEnvío Villa Clara',
+        storeName: 'TuEnvío Santa Clara',
+        email: 'tuenvio@merqba.com',
+        avatar: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?w=150&auto=format&fit=crop&q=80',
+        banner: 'https://images.unsplash.com/photo-1556742049-0a67d553c2a5?w=800&auto=format&fit=crop&q=80',
+        rating: 4.6,
+        ratingCount: 64,
+        storeUrl: `${WC_STORE_URL}/store/tuenvio-santa-clara/`,
+        phone: '+53 5 777 8899',
+        address: 'Carretera Central, Santa Clara',
+      },
+      535: {
+        id: 535,
+        name: 'La Pillar',
+        storeName: 'Gourmet La Pillar',
+        email: 'lapillar@merqba.com',
+        avatar: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=150&auto=format&fit=crop&q=80',
+        banner: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&auto=format&fit=crop&q=80',
+        rating: 5.0,
+        ratingCount: 41,
+        storeUrl: `${WC_STORE_URL}/store/la-pillar/`,
+        phone: '+53 5 888 9900',
+        address: 'Reparto Vigía, Santa Clara',
+      },
+      640: {
+        id: 640,
+        name: 'Supermercado Artex',
+        storeName: 'Supermercado Artex Villa Clara',
+        email: 'artex@merqba.com',
+        avatar: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=150&auto=format&fit=crop&q=80',
+        banner: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800&auto=format&fit=crop&q=80',
+        rating: 4.8,
+        ratingCount: 22,
+        storeUrl: `${WC_STORE_URL}/store/supermercado-artex/`,
+        phone: '+53 5 999 0011',
+        address: 'Centro Ciudad, Santa Clara',
       },
     };
 
@@ -307,12 +371,14 @@ app.get('/api/woocommerce/products', async (req, res) => {
 
     return res.json({ success: false, products: [], source: 'empty_response' });
   } catch (error: any) {
-    console.error('Error connecting to live WooCommerce API:', error.message);
+    if (error.name !== 'AbortError') {
+      console.warn('Network notice connecting to live WooCommerce API:', error.message);
+    }
     return res.status(200).json({
       success: false,
       source: 'offline_fallback',
       error: error.message,
-      message: 'No se pudo conectar directamente con WooCommerce; se mantendrán los datos locales.',
+      message: 'Modo offline activo; usando catálogo local sincronizado.',
       products: [],
     });
   }

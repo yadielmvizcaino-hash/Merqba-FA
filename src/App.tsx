@@ -64,7 +64,7 @@ export default function App() {
   const [sortOption, setSortOption] = useState<SortOption>('name-asc');
 
   // Modal states
-  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const [isLoginOpen, setIsLoginOpen] = useState(true);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isWebhookOpen, setIsWebhookOpen] = useState(false);
   const [quickEditProduct, setQuickEditProduct] = useState<Product | null>(null);
