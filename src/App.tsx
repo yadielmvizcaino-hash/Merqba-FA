@@ -23,6 +23,7 @@ import { VendorBar } from './components/VendorBar';
 import { FilterBar } from './components/FilterBar';
 import { ProductCard } from './components/ProductCard';
 import { ProductQuickEditModal } from './components/ProductQuickEditModal';
+import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import { ShareProductModal } from './components/ShareProductModal';
 import { LoginModal } from './components/LoginModal';
 import { WebhookModal } from './components/WebhookModal';
@@ -68,6 +69,8 @@ export default function App() {
   const [isWebhookOpen, setIsWebhookOpen] = useState(false);
   const [quickEditProduct, setQuickEditProduct] = useState<Product | null>(null);
   const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
+  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [isDeletingProduct, setIsDeletingProduct] = useState(false);
 
   // Notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -111,7 +114,7 @@ export default function App() {
     };
   }, []);
 
-  // Initialize data on mount and auto-sync with live WooCommerce store
+  // Initialize data on mount and auto-sync with live Merqba store
   useEffect(() => {
     const loadedProducts = getStoredProducts();
     const loadedVendors = getStoredVendors();
@@ -124,7 +127,7 @@ export default function App() {
     setWebhookLogs(loadedLogs);
     setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
 
-    // Automatically sync live catalog from WooCommerce if products are demo or empty
+    // Automatically sync live catalog from Merqba if products are demo or empty
     handleSync(true);
   }, []);
 
@@ -249,6 +252,40 @@ export default function App() {
     }
   };
 
+  // Delete product handler
+  const handleConfirmDeleteProduct = async (product: Product) => {
+    setIsDeletingProduct(true);
+    try {
+      // 1. Delete on server proxy (if connected to Merqba)
+      fetch(`/api/woocommerce/products/${product.id}`, { method: 'DELETE' })
+        .catch((e) => console.warn('Server delete notification:', e));
+
+      // 2. Remove locally
+      const updatedList = products.filter((p) => p.id !== product.id);
+      setProducts(updatedList);
+      saveStoredProducts(updatedList);
+
+      // 3. Webhook sync if realtime active
+      if (config.realtimeSync) {
+        const remainingVendorItems = updatedList.filter((p) => p.vendorId === currentVendor.id);
+        dispatchProductsWebhook(currentVendor, remainingVendorItems, config, 'realtime_change')
+          .then((res) => setWebhookLogs((prev) => [res.log, ...prev].slice(0, 30)))
+          .catch(() => {});
+      }
+
+      addToast(
+        'success',
+        'Producto Eliminado',
+        `"${product.name}" ha sido eliminado exitosamente del catálogo.`
+      );
+      setProductToDelete(null);
+    } catch (err: any) {
+      addToast('error', 'Error al Eliminar', err.message || 'No se pudo eliminar el producto.');
+    } finally {
+      setIsDeletingProduct(false);
+    }
+  };
+
   // Sync products with app: "🔥Botón para sincronizar productos con la app"
   const handleSync = async (silent = false) => {
     setIsSyncing(true);
@@ -257,11 +294,11 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-          // 1. Update all products from WooCommerce
+          // 1. Update all products from Merqba
           setProducts(data.products);
           saveStoredProducts(data.products);
 
-          // 2. Update vendors from live WooCommerce stores discovered
+          // 2. Update vendors from live Merqba stores discovered
           if (Array.isArray(data.vendors) && data.vendors.length > 0) {
             setVendors(data.vendors);
             saveStoredVendors(data.vendors);
@@ -299,7 +336,7 @@ export default function App() {
         }
       } else {
         if (!silent) {
-          addToast('error', 'Error al Sincronizar', 'No se pudo obtener el catálogo de WooCommerce.');
+          addToast('error', 'Error al Sincronizar', 'No se pudo obtener el catálogo de Merqba.');
         }
       }
     } catch (e: any) {
@@ -319,7 +356,7 @@ export default function App() {
 
     setIsDispatchingWebhook(true);
     try {
-      // 1. Dispatch batch changes to WooCommerce REST API proxy
+      // 1. Dispatch batch changes to Merqba REST API proxy
       fetch('/api/woocommerce/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -344,7 +381,7 @@ export default function App() {
       addToast(
         result.success ? 'success' : 'error',
         result.success ? '¡Cambios Aplicados con Éxito!' : 'Error al Enviar Webhook',
-        `Webhook y lote WooCommerce enviados (${result.statusCode} OK - ${result.latencyMs}ms)`
+        `Webhook y lote Merqba enviados (${result.statusCode} OK - ${result.latencyMs}ms)`
       );
     } catch (err: any) {
       addToast('error', 'Error en Webhook', err.message || 'Fallo de red');
@@ -378,7 +415,7 @@ export default function App() {
   const handleSaveConfig = (updated: StoreConfig) => {
     setConfig(updated);
     saveStoredConfig(updated);
-    addToast('success', 'Configuración Guardada', 'Parámetros de WooCommerce y Webhook actualizados.');
+    addToast('success', 'Configuración Guardada', 'Parámetros de Merqba y Webhook actualizados.');
   };
 
   // Handle catalog reset to defaults
@@ -519,6 +556,7 @@ export default function App() {
                 onUpdateProduct={handleUpdateProduct}
                 onOpenQuickEdit={(p) => setQuickEditProduct(p)}
                 onShareProduct={(p) => setSharingProduct(p)}
+                onDeleteProduct={(p) => setProductToDelete(p)}
               />
             ))}
           </div>
@@ -564,6 +602,16 @@ export default function App() {
         isOpen={!!quickEditProduct}
         onClose={() => setQuickEditProduct(null)}
         onSave={handleUpdateProduct}
+        onDelete={(p) => setProductToDelete(p)}
+      />
+
+      <DeleteConfirmationModal
+        product={productToDelete}
+        config={config}
+        isOpen={!!productToDelete}
+        onClose={() => setProductToDelete(null)}
+        onConfirmDelete={handleConfirmDeleteProduct}
+        isDeleting={isDeletingProduct}
       />
 
       <ShareProductModal

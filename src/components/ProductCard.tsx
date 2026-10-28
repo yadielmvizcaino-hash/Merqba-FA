@@ -8,6 +8,7 @@ import {
   Upload,
   ExternalLink,
   Share2,
+  Trash2,
 } from 'lucide-react';
 import { Product, StoreConfig } from '../types';
 
@@ -17,6 +18,7 @@ interface ProductCardProps {
   onUpdateProduct: (updated: Product) => void;
   onOpenQuickEdit: (product: Product) => void;
   onShareProduct: (product: Product) => void;
+  onDeleteProduct: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -25,6 +27,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onUpdateProduct,
   onOpenQuickEdit,
   onShareProduct,
+  onDeleteProduct,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -370,6 +373,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 >
                   <span>Detalles</span>
                   <ExternalLink className="w-3 h-3" />
+                </button>
+
+                {/* Delete Product Button */}
+                <button
+                  type="button"
+                  onClick={() => onDeleteProduct(product)}
+                  className="p-1.5 text-[#94A3B8] hover:text-[#DC2626] hover:bg-[#FEF2F2] rounded-lg transition-colors cursor-pointer"
+                  title="Eliminar producto del catálogo"
+                  aria-label={`Eliminar ${product.name}`}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>

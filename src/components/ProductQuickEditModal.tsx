@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon } from 'lucide-react';
+import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { Product, StoreConfig } from '../types';
 
 interface ProductQuickEditModalProps {
@@ -8,6 +8,7 @@ interface ProductQuickEditModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (updatedProduct: Product) => void;
+  onDelete?: (product: Product) => void;
 }
 
 export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
@@ -16,6 +17,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  onDelete,
 }) => {
   if (!isOpen || !product) return null;
 
@@ -264,21 +266,37 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
           </div>
 
           {/* Actions */}
-          <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border border-[#CBD5E1] text-[#475569] text-xs font-semibold rounded-lg hover:bg-[#F8FAFC] cursor-pointer"
-            >
-              Cancelar
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
-            >
-              <Check className="w-4 h-4" />
-              <span>Guardar Cambios</span>
-            </button>
+          <div className="pt-3 border-t border-[#E2E8F0] flex items-center justify-between gap-2">
+            {onDelete ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onDelete(product);
+                  onClose();
+                }}
+                className="px-3 py-2 text-[#DC2626] hover:bg-[#FEF2F2] border border-transparent hover:border-[#FECACA] rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Eliminar</span>
+              </button>
+            ) : <div />}
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 border border-[#CBD5E1] text-[#475569] text-xs font-semibold rounded-lg hover:bg-[#F8FAFC] cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Guardar Cambios</span>
+              </button>
+            </div>
           </div>
         </form>
       </div>

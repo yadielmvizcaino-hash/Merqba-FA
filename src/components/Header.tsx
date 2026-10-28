@@ -135,7 +135,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenStoreConfig}
             className="p-2 text-slate-300 hover:text-white hover:bg-[#1C222E] rounded-lg transition-colors cursor-pointer border border-[#273142] h-10 w-10 flex items-center justify-center shrink-0 bg-[#121620]"
-            title="Configuración de WooCommerce y Webhook"
+            title="Configuración de Merqba y Webhook"
             aria-label="Configurar tienda"
           >
             <Settings className="w-5 h-5 text-slate-300" />
@@ -146,7 +146,7 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onSync}
             disabled={isSyncing}
             className="flex items-center gap-1.5 px-3 py-2 border border-[#273142] bg-[#121620] hover:bg-[#1C222E] active:bg-[#252E3D] text-slate-100 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer shadow-xs disabled:opacity-60 h-10 shrink-0"
-            title="Sincronizar catálogo con WooCommerce"
+            title="Sincronizar catálogo con Merqba"
           >
             <RefreshCw className={`w-4 h-4 text-[#FFA000] ${isSyncing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">Sincronizar</span>

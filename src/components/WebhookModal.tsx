@@ -243,7 +243,7 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
                   </button>
                 </div>
                 <p className="text-[11px] text-[#64748B] mt-1">
-                  Puedes pegar tu URL de Webhook.site, Zapier, Make, o el listener de tu tienda WooCommerce.
+                  Puedes pegar tu URL de Webhook.site, Zapier, Make, o el listener de tu tienda Merqba.
                 </p>
               </div>
 

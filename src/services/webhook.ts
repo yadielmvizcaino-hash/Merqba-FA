@@ -23,7 +23,7 @@ export const generateWebhookPayload = (
   return {
     event: 'merqba.vendor_products.sync',
     trigger: triggerType,
-    marketplace: 'Merqba FA (WooCommerce Marketplace)',
+    marketplace: 'Merqba FA (Marketplace)',
     app: 'Merqba FA',
     timestamp: new Date().toISOString(),
     store: {
@@ -116,7 +116,7 @@ export const dispatchProductsWebhook = async (
     } else {
       statusCode = 200;
       success = true;
-      message = 'Webhook simulado con éxito (WooCommerce REST Bridge)';
+      message = 'Webhook simulado con éxito (Merqba REST Bridge)';
     }
   } catch (err: any) {
     statusCode = 500;
