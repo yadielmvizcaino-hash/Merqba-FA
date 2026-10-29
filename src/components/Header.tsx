@@ -160,13 +160,9 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="font-extrabold">Aplicar Cambios</span>
 
             {/* Badge for pending changes */}
-            {pendingChangesCount > 0 ? (
+            {pendingChangesCount > 0 && (
               <span className="ml-0.5 bg-white text-[#C2410C] text-[10px] font-black px-1.5 py-0.2 rounded-full tabular-nums shadow-xs">
                 {pendingChangesCount}
-              </span>
-            ) : (
-              <span className="hidden md:inline-block text-[11px] text-orange-100 font-normal">
-                (Webhook)
               </span>
             )}
           </button>
