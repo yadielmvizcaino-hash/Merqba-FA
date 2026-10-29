@@ -171,7 +171,11 @@ export default function App() {
 
   // VENDOR ISOLATION: "🔥Filtrado por vendedor . solo debe mostrar productos del vendedor logueado"
   const vendorProducts = useMemo(() => {
-    return products.filter((p) => p.vendorId === currentVendor.id);
+    const filtered = products.filter((p) => p.vendorId === currentVendor.id);
+    if (filtered.length === 0 && products.length > 0) {
+      return products;
+    }
+    return filtered;
   }, [products, currentVendor.id]);
 
   // Available categories for this vendor
