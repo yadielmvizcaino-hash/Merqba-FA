@@ -141,8 +141,7 @@ export default function App() {
     setWebhookLogs(loadedLogs);
     setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
 
-    // Automatically sync live catalog from Merqba if products are demo or empty
-    handleSync(true);
+    // Catalog loads from local storage. Use manual 'Sincronizar' button to query kvm1.
   }, []);
 
   // Save products to storage whenever updated
