@@ -132,13 +132,13 @@ export const addStoredWebhookLog = (log: WebhookLog): void => {
 };
 
 export const resetAllData = (): { products: Product[]; vendors: DokanVendor[]; config: StoreConfig } => {
-  localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(INITIAL_PRODUCTS));
+  localStorage.removeItem(STORAGE_KEYS.PRODUCTS);
   localStorage.setItem(STORAGE_KEYS.VENDORS, JSON.stringify(INITIAL_VENDORS));
   localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(DEFAULT_CONFIG));
   localStorage.setItem(STORAGE_KEYS.CURRENT_VENDOR_ID, INITIAL_VENDORS[0].id.toString());
   localStorage.removeItem(STORAGE_KEYS.WEBHOOK_LOGS);
   return {
-    products: INITIAL_PRODUCTS,
+    products: [],
     vendors: INITIAL_VENDORS,
     config: DEFAULT_CONFIG,
   };
