@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon, Trash2, ExternalLink } from 'lucide-react';
 import { Product, StoreConfig } from '../types';
 
 interface ProductQuickEditModalProps {
@@ -22,6 +22,20 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   if (!isOpen || !product) return null;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const productSlug =
+    product.slug ||
+    product.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+  const productUrl =
+    product.permalink && product.permalink.startsWith('http')
+      ? product.permalink.replace(/\/+$/, '')
+      : `${config.storeUrl.replace(/\/+$/, '')}/producto/${productSlug}`;
 
   const [name, setName] = useState(product.name);
   const [price, setPrice] = useState(product.price.toString());
@@ -89,9 +103,21 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
         {/* Header */}
         <div className="px-5 py-4 bg-[#0B0E14] text-white flex items-center justify-between border-b border-[#1E2530]">
           <div className="min-w-0">
-            <span className="text-[10px] font-bold tracking-wider uppercase text-[#FFA000]">
-              Edición Rápida • ID: #{product.id}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-bold tracking-wider uppercase text-[#FFA000]">
+                Edición Rápida • ID: #{product.id}
+              </span>
+              <a
+                href={productUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[10px] text-slate-400 hover:text-[#FFA000] inline-flex items-center gap-1 hover:underline transition-colors"
+                title="Ver producto en la tienda oficial Merqba"
+              >
+                <span>Ver en tienda</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            </div>
             <h2 className="text-base font-bold truncate text-white">{product.name}</h2>
           </div>
           <button

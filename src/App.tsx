@@ -23,6 +23,7 @@ import { VendorBar } from './components/VendorBar';
 import { FilterBar } from './components/FilterBar';
 import { ProductCard } from './components/ProductCard';
 import { ProductQuickEditModal } from './components/ProductQuickEditModal';
+import { CreateProductModal } from './components/CreateProductModal';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import { ShareProductModal } from './components/ShareProductModal';
 import { LoginModal } from './components/LoginModal';
@@ -83,6 +84,7 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(hasAuthCookie);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isWebhookOpen, setIsWebhookOpen] = useState(false);
+  const [isCreateProductOpen, setIsCreateProductOpen] = useState(false);
   const [quickEditProduct, setQuickEditProduct] = useState<Product | null>(null);
   const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
@@ -491,50 +493,52 @@ export default function App() {
     addToast('info', 'Catálogo Restaurado', 'Se han restablecido los datos iniciales de prueba.');
   };
 
-  // Create new product for current vendor and sync to WooCommerce
-  const handleAddNewProduct = async () => {
-    const tempId = Math.floor(Math.random() * 90000) + 10000;
-    const newProduct: Product = {
-      id: tempId,
-      vendorId: currentVendor.id,
-      name: 'Nuevo Producto ' + tempId,
-      sku: 'SKU-' + tempId,
-      price: 29.99,
-      regularPrice: 29.99,
-      stockQuantity: 10,
-      stockStatus: 'instock',
-      manageStock: true,
-      imageUrl: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=500&auto=format&fit=crop&q=80',
-      category: vendorCategories[0] || 'General',
-      isModifiedLocally: true,
-      isNew: true,
-      lastModified: new Date().toISOString(),
-    };
+  // Open creation modal (without creating dummy products or premature notifications)
+  const handleOpenCreateProduct = () => {
+    setIsCreateProductOpen(true);
+  };
 
-    setProducts((prev) => [newProduct, ...prev]);
-    setQuickEditProduct(newProduct);
-    addToast('success', 'Producto Creado', `Nuevo producto #${tempId} creado y sincronizándose con WooCommerce...`);
-
+  // Create new product on WooCommerce and add to catalog only after user submits
+  const handleSaveNewProduct = async (newProductData: Partial<Product>): Promise<boolean> => {
     try {
       const res = await fetch('/api/woocommerce/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newProduct),
+        body: JSON.stringify(newProductData),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.product) {
-          setProducts((prev) =>
-            prev.map((p) => (p.id === tempId ? { ...data.product, isModifiedLocally: false, isNew: false } : p))
-          );
-          if (quickEditProduct?.id === tempId) {
-            setQuickEditProduct({ ...data.product, isModifiedLocally: false, isNew: false });
-          }
-          addToast('success', 'Sincronizado en WooCommerce', `¡Producto creado en WooCommerce con ID #${data.product.id}!`);
-        }
+
+      const data = await res.json();
+
+      if (res.ok && data.success && data.product) {
+        const createdProduct: Product = {
+          ...data.product,
+          isModifiedLocally: false,
+          isNew: false,
+        };
+
+        // Add the real created product to local state
+        setProducts((prev) => [createdProduct, ...prev]);
+
+        // Success notification displayed ONLY after product is created
+        addToast(
+          'success',
+          'Producto Creado con Éxito',
+          `"${createdProduct.name}" ha sido creado en WooCommerce (ID #${createdProduct.id}).`
+        );
+        return true;
+      } else {
+        const errMsg = data.message || 'No se pudo crear el producto en WooCommerce. Revisa los datos e intenta de nuevo.';
+        addToast('error', 'Error al Crear Producto', errMsg);
+        return false;
       }
-    } catch (e) {
-      console.warn('Background create sync error:', e);
+    } catch (err: any) {
+      console.error('Error creating product:', err);
+      addToast(
+        'error',
+        'Error de Conexión',
+        'No se pudo conectar con el servidor para crear el producto. Inténtalo nuevamente.'
+      );
+      return false;
     }
   };
 
@@ -625,7 +629,7 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={handleAddNewProduct}
+                  onClick={handleOpenCreateProduct}
                   className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
                   title="Añadir nuevo producto a tu tienda"
                 >
@@ -712,6 +716,15 @@ export default function App() {
       )}
 
       {/* 6. Modals */}
+      <CreateProductModal
+        isOpen={isCreateProductOpen}
+        onClose={() => setIsCreateProductOpen(false)}
+        vendor={currentVendor}
+        categories={vendorCategories}
+        config={config}
+        onCreateProduct={handleSaveNewProduct}
+      />
+
       <ProductQuickEditModal
         product={quickEditProduct}
         config={config}

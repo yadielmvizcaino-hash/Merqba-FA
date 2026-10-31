@@ -18,6 +18,8 @@ export interface Product {
   id: number;
   vendorId: number;
   name: string;
+  slug?: string;
+  permalink?: string;
   sku: string;
   regularPrice: number;
   salePrice?: number;
@@ -27,6 +29,7 @@ export interface Product {
   manageStock: boolean;
   imageUrl: string;
   category: string;
+  description?: string;
   tags?: string[];
   lastModified?: string;
   isModifiedLocally?: boolean;

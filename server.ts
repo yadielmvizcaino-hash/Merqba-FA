@@ -13,8 +13,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Secure WooCommerce Store Configuration (Server-Side Only - never exposed to public UI)
 const WC_STORE_URL = (process.env.WC_STORE_URL || 'https://merqba.com').replace(/\/+$/, '');
-const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || 'ck_115fce2ee9779ca57b79bd19811d44be9dd6b9b2';
-const WC_CONSUMER_SECRET = process.env.WC_CONSUMER_SECRET || 'cs_7b5ddadd4a04c6996d04430974564928a58ca12a';
+const WC_CONSUMER_KEY = 'ck_115fce2ee9779ca57b79bd19811d44be9dd6b9b2';
+const WC_CONSUMER_SECRET = 'cs_7b5ddadd4a04c6996d04430974564928a58ca12a';
 
 app.use(express.json({ limit: '15mb' }));
 
@@ -311,6 +311,8 @@ app.get('/api/woocommerce/products', async (req, res) => {
                 id: item.id,
                 vendorId: storeIdToFetch,
                 name: item.name || 'Sin nombre',
+                slug: item.slug || undefined,
+                permalink: item.permalink || undefined,
                 sku: item.sku || `SKU-${item.id}`,
                 regularPrice: isNaN(regularNum) ? 0 : regularNum,
                 salePrice: saleNum !== undefined && !isNaN(saleNum) ? saleNum : undefined,
@@ -378,6 +380,8 @@ app.get('/api/woocommerce/products', async (req, res) => {
           id: item.id,
           vendorId: storeId,
           name: item.name || 'Sin nombre',
+          slug: item.slug || undefined,
+          permalink: item.permalink || undefined,
           sku: item.sku || `SKU-${item.id}`,
           regularPrice: isNaN(regularNum) ? 0 : regularNum,
           salePrice: saleNum !== undefined && !isNaN(saleNum) ? saleNum : undefined,
@@ -421,19 +425,38 @@ app.post('/api/woocommerce/products', async (req, res) => {
   const productData = req.body;
   const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products`;
 
-  const wcPayload = {
+  // Only pass image URL if it is a valid web URL; avoid raw data URLs which WooCommerce rejects with 400
+  const hasWebImage =
+    typeof productData.imageUrl === 'string' &&
+    (productData.imageUrl.startsWith('http://') || productData.imageUrl.startsWith('https://'));
+
+  const wcPayload: any = {
     name: productData.name || 'Nuevo Producto',
     type: 'simple',
-    regular_price: String(productData.regularPrice || productData.price || '0'),
-    sale_price: productData.salePrice !== undefined && productData.salePrice !== '' ? String(productData.salePrice) : undefined,
+    regular_price: String(productData.regularPrice !== undefined ? productData.regularPrice : (productData.price || '0')),
     description: productData.description || '',
     sku: productData.sku || `SKU-${Date.now().toString().slice(-6)}`,
     manage_stock: Boolean(productData.manageStock),
     stock_quantity: Number(productData.stockQuantity || 0),
     stock_status: Number(productData.stockQuantity || 0) > 0 ? 'instock' : 'outofstock',
-    images: productData.imageUrl ? [{ src: productData.imageUrl }] : undefined,
-    categories: productData.category ? [{ name: productData.category }] : undefined,
   };
+
+  if (productData.salePrice !== undefined && productData.salePrice !== '') {
+    wcPayload.sale_price = String(productData.salePrice);
+  }
+
+  if (hasWebImage) {
+    wcPayload.images = [{ src: productData.imageUrl }];
+  }
+
+  if (productData.category && productData.category.trim() && productData.category !== 'General') {
+    wcPayload.categories = [{ name: productData.category.trim() }];
+  }
+
+  // Dokan vendor assignment if vendorId is provided
+  if (productData.vendorId) {
+    wcPayload.meta_data = [{ key: '_dokan_vendor_id', value: String(productData.vendorId) }];
+  }
 
   try {
     const controller = new AbortController();
@@ -465,6 +488,8 @@ app.post('/api/woocommerce/products', async (req, res) => {
         id: item.id,
         vendorId: storeId,
         name: item.name,
+        slug: item.slug || undefined,
+        permalink: item.permalink || undefined,
         sku: item.sku || `SKU-${item.id}`,
         regularPrice: regularNum,
         salePrice: saleNum,
@@ -487,21 +512,27 @@ app.post('/api/woocommerce/products', async (req, res) => {
       });
     } else {
       const errText = await response.text();
-      console.warn(`WooCommerce create product failed with status ${response.status}:`, errText);
-      return res.json({
-        success: true,
-        simulated: true,
-        product: { ...productData, isModifiedLocally: true },
-        message: 'Producto guardado localmente (WooCommerce respondió con error al crear).',
+      let cleanErrorMessage = `WooCommerce respondió con estado ${response.status}`;
+      try {
+        const parsedErr = JSON.parse(errText);
+        if (parsedErr.message) {
+          cleanErrorMessage = parsedErr.message.replace(/<[^>]*>?/gm, ''); // Strip HTML if any
+        }
+      } catch (e) {
+        if (errText) cleanErrorMessage = errText.slice(0, 200);
+      }
+
+      console.warn(`WooCommerce create product failed (${response.status}):`, cleanErrorMessage);
+      return res.status(response.status).json({
+        success: false,
+        message: cleanErrorMessage,
       });
     }
   } catch (err: any) {
     console.error('Create product network error:', err.message);
-    return res.json({
-      success: true,
-      simulated: true,
-      product: { ...productData, isModifiedLocally: true },
-      message: 'Producto guardado localmente (sin conexión a internet con WooCommerce).',
+    return res.status(500).json({
+      success: false,
+      message: 'No se pudo conectar con el servidor de WooCommerce para crear el producto.',
     });
   }
 });

@@ -32,15 +32,20 @@ export const ShareProductModal: React.FC<ShareProductModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
 
-  // Generate realistic clean product URL
-  const productSlug = product.name
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+  // Generate realistic clean product URL matching WooCommerce canonical URL
+  const productSlug =
+    product.slug ||
+    product.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
 
-  const productUrl = `${config.storeUrl.replace(/\/+$/, '')}/producto/${product.id}-${productSlug}`;
+  const productUrl =
+    product.permalink && product.permalink.startsWith('http')
+      ? product.permalink.replace(/\/+$/, '')
+      : `${config.storeUrl.replace(/\/+$/, '')}/producto/${productSlug}`;
   const priceDisplay = `${config.currencySymbol}${product.price.toFixed(2)}`;
   const isAvailable = product.stockStatus === 'instock' && product.stockQuantity > 0;
   const stockText = isAvailable ? `✅ Disponible (${product.stockQuantity} unidades)` : '⚠️ Agotado temporalmente';
@@ -296,6 +301,15 @@ export const ShareProductModal: React.FC<ShareProductModalProps> = ({
                 {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedLink ? 'Copiado' : 'Enlace'}</span>
               </button>
+              <a
+                href={productUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-2 border border-[#CBD5E1] hover:border-[#FF5A00] text-[#475569] hover:text-[#EA580C] hover:bg-[#FFF7ED] rounded-lg transition-colors cursor-pointer shrink-0"
+                title="Abrir enlace en la tienda"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
             </div>
           </div>
         </div>
