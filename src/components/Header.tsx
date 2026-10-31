@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Send, Settings, Zap, Wifi, WifiOff } from 'lucide-react';
+import { RefreshCw, Send, Settings, Zap, Wifi, WifiOff, LogIn, LogOut } from 'lucide-react';
 import { DokanVendor, StoreConfig } from '../types';
 
 interface HeaderProps {
@@ -15,6 +15,8 @@ interface HeaderProps {
   onOpenWebhookLogs: () => void;
   lastSyncTime: string;
   isOnline?: boolean;
+  isAuthenticated?: boolean;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -30,6 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenWebhookLogs,
   lastSyncTime,
   isOnline = true,
+  isAuthenticated = false,
+  onLogout,
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-[#0B0E14] border-b border-[#1F2633] shadow-md">
@@ -89,37 +93,59 @@ export const Header: React.FC<HeaderProps> = ({
             </span>
           </div>
 
-          {/* Vendor info button */}
-          <button
-            onClick={onOpenVendorLogin}
-            className="relative flex items-center gap-2 text-left group cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#FF5A00] rounded-xl p-1 -m-1 transition-all min-w-0 hover:bg-[#161B24]"
-            title="Cambiar de Tienda / Vendedor"
-          >
-            <div className="relative shrink-0">
-              <img
-                src={currentVendor.avatar}
-                alt={currentVendor.name}
-                className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-[#FF5A00] shadow-xs"
-              />
-              <span
-                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#10B981] border-2 border-[#0B0E14] rounded-full"
-                title="Vendedor activo y conectado"
-              ></span>
+          {/* Vendor info button or Login button */}
+          {isAuthenticated ? (
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <button
+                onClick={onOpenVendorLogin}
+                className="relative flex items-center gap-2 text-left group cursor-pointer focus:outline-none focus:ring-2 focus:ring-[#FF5A00] rounded-xl p-1 -m-1 transition-all min-w-0 hover:bg-[#161B24]"
+                title="Cambiar de Tienda / Vendedor"
+              >
+                <div className="relative shrink-0">
+                  <img
+                    src={currentVendor.avatar}
+                    alt={currentVendor.name}
+                    className="w-9 h-9 sm:w-10 sm:h-10 rounded-full object-cover border-2 border-[#FF5A00] shadow-xs"
+                  />
+                  <span
+                    className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-[#10B981] border-2 border-[#0B0E14] rounded-full"
+                    title="Vendedor activo y conectado"
+                  ></span>
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <h1 className="font-bold text-white text-xs sm:text-sm md:text-base leading-tight truncate max-w-[120px] sm:max-w-[200px] md:max-w-[240px]">
+                      {currentVendor.storeName}
+                    </h1>
+                    <span className="text-[10px] font-bold bg-[#1C1814] text-[#FFA000] border border-[#FF5A00]/30 px-1.5 py-0.5 rounded shrink-0">
+                      ID: #{currentVendor.id}
+                    </span>
+                  </div>
+                  <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
+                    {currentVendor.name} • <span className="text-[#FF8C00] font-medium group-hover:underline">Cambiar</span>
+                  </p>
+                </div>
+              </button>
+
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer border border-[#273142]"
+                  title="Cerrar Sesión de esta cuenta"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              )}
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="font-bold text-white text-xs sm:text-sm md:text-base leading-tight truncate max-w-[120px] sm:max-w-[200px] md:max-w-[240px]">
-                  {currentVendor.storeName}
-                </h1>
-                <span className="text-[10px] font-bold bg-[#1C1814] text-[#FFA000] border border-[#FF5A00]/30 px-1.5 py-0.5 rounded shrink-0">
-                  ID: #{currentVendor.id}
-                </span>
-              </div>
-              <p className="text-[10px] sm:text-[11px] text-slate-400 truncate">
-                {currentVendor.name} • <span className="text-[#FF8C00] font-medium group-hover:underline">Cambiar</span>
-              </p>
-            </div>
-          </button>
+          ) : (
+            <button
+              onClick={onOpenVendorLogin}
+              className="flex items-center gap-2 px-3.5 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <LogIn className="w-4 h-4" />
+              <span>Iniciar Sesión</span>
+            </button>
+          )}
         </div>
 
         {/* Right: Sync & Apply Changes (Webhook) */}

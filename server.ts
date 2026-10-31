@@ -13,14 +13,108 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Secure WooCommerce Store Configuration (Server-Side Only - never exposed to public UI)
 const WC_STORE_URL = (process.env.WC_STORE_URL || 'https://merqba.com').replace(/\/+$/, '');
-const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || 'ck_55a675ef7e9b4acfdffbead8470c028894a96245';
-const WC_CONSUMER_SECRET = process.env.WC_CONSUMER_SECRET || 'cs_4592b446cc7f5050962cce1b7e479bf2e3d82d8f';
+const WC_CONSUMER_KEY = process.env.WC_CONSUMER_KEY || 'ck_115fce2ee9779ca57b79bd19811d44be9dd6b9b2';
+const WC_CONSUMER_SECRET = process.env.WC_CONSUMER_SECRET || 'cs_7b5ddadd4a04c6996d04430974564928a58ca12a';
 
 app.use(express.json({ limit: '15mb' }));
 
 const getWcAuthHeader = () => {
   const token = Buffer.from(`${WC_CONSUMER_KEY}:${WC_CONSUMER_SECRET}`).toString('base64');
   return `Basic ${token}`;
+};
+
+const knownVendors: Record<number, any> = {
+  1: {
+    id: 1,
+    name: 'Yadiel Moya',
+    storeName: 'Merqba',
+    email: 'yadielmvizcaino@gmail.com',
+    avatar: 'https://merqba.com/wp-content/uploads/2026/05/merqba-logo-icon.png',
+    banner: 'https://merqba.com/wp-content/plugins/dokan-lite/assets/images/default-store-banner.png',
+    rating: 5.0,
+    ratingCount: 56,
+    storeUrl: `${WC_STORE_URL}/store/yadiel/`,
+    phone: '+53 5 963 1292',
+    address: 'Santa Clara, Villa Clara, Cuba',
+  },
+  191: {
+    id: 191,
+    name: 'Los Chanas Los Chanas',
+    storeName: 'Los Chanas Ferretería',
+    email: 'loschanasferreteria@gmail.com',
+    avatar: 'https://merqba.com/wp-content/uploads/2026/10/cropped-IMG_20261026_093719.jpg',
+    banner: 'https://merqba.com/wp-content/uploads/2026/10/cropped-Ferreteria-Los-Chanas_-Fuerza-y-Herramientas-1.jpg',
+    rating: 4.9,
+    ratingCount: 15,
+    storeUrl: `${WC_STORE_URL}/store/los-chanas-ferreter-a/`,
+    phone: '+53 5 434 1916',
+    address: 'Circunvalación e/ Roble y Autopista, Santa Clara, Cuba',
+  },
+  87: {
+    id: 87,
+    name: 'Surticuba',
+    storeName: 'Surticuba',
+    email: 'surticuba@gmail.com',
+    avatar: 'https://merqba.com/wp-content/plugins/dokan-lite/assets/images/mystery-person.jpg',
+    banner: 'https://merqba.com/wp-content/plugins/dokan-lite/assets/images/default-store-banner.png',
+    rating: 4.8,
+    ratingCount: 39,
+    storeUrl: `${WC_STORE_URL}/store/surticuba/`,
+    phone: '+53 5 540 7015',
+    address: 'Santa Clara, Cuba',
+  },
+  81: {
+    id: 81,
+    name: 'Yanet Moya',
+    storeName: 'Última milla',
+    email: 'ultimamilla@gmail.com',
+    avatar: 'https://merqba.com/wp-content/uploads/2026/07/cropped-IMG_20260715_223441-1.png',
+    banner: 'https://merqba.com/wp-content/uploads/2026/07/cropped-InShot_20260715_223335865.jpg',
+    rating: 4.9,
+    ratingCount: 20,
+    storeUrl: `${WC_STORE_URL}/store/ultima-milla/`,
+    phone: '+53 5 963 1292',
+    address: 'Santa Clara, Cuba',
+  },
+  54: {
+    id: 54,
+    name: 'A&E Nexus',
+    storeName: 'A&E Nexus',
+    email: 'aenexus@gmail.com',
+    avatar: 'https://merqba.com/wp-content/uploads/2026/06/cropped-cropped-InShot_20260624_152129811-2.jpg',
+    banner: 'https://merqba.com/wp-content/uploads/2026/06/cropped-InShot_20260624_154011069.jpg',
+    rating: 4.7,
+    ratingCount: 18,
+    storeUrl: `${WC_STORE_URL}/store/ae-nexus/`,
+    phone: '+53 5 954 9890',
+    address: 'Santa Clara, Cuba',
+  },
+  39: {
+    id: 39,
+    name: 'Alberto Perdomo',
+    storeName: 'Alpha móvil',
+    email: 'alphamovil@gmail.com',
+    avatar: 'https://merqba.com/wp-content/uploads/2026/06/cropped-Chibi-mikha-lim✨.jpg',
+    banner: 'https://merqba.com/wp-content/uploads/2026/06/cropped-4ee0482982cfa89bb4d1cff3333a55e6.png',
+    rating: 4.8,
+    ratingCount: 25,
+    storeUrl: `${WC_STORE_URL}/store/alpha-movil/`,
+    phone: '+53 5 342 7965',
+    address: 'Santa Clara, Cuba',
+  },
+  32: {
+    id: 32,
+    name: 'RollOn',
+    storeName: 'RollOn',
+    email: 'rollon@gmail.com',
+    avatar: 'https://merqba.com/wp-content/uploads/2026/06/cropped-Modelo-de-design-do-logotipo-do-icone-do-oleo-do-motor-_-Vetor-Premium-1.jpg',
+    banner: 'https://merqba.com/wp-content/uploads/2026/06/cropped-mobil-super-fs-sm.jpg',
+    rating: 4.9,
+    ratingCount: 30,
+    storeUrl: `${WC_STORE_URL}/store/rollon/`,
+    phone: '+53 5 209 9999',
+    address: 'Santa Clara, Cuba',
+  },
 };
 
 // 1. Connection Status API (Public to app, hides keys)
@@ -123,114 +217,7 @@ app.post('/api/woocommerce/login', async (req, res) => {
       });
     }
 
-    // 3. Authentication Succeeded! Build vendor profile
-    const knownVendors: Record<number, any> = {
-      1: {
-        id: 1,
-        name: 'Yadiel Moya',
-        storeName: 'Merqba',
-        email: 'yadielmvizcaino@gmail.com',
-        avatar: 'https://merqba.com/wp-content/uploads/2026/05/merqba-logo-icon.png',
-        banner: 'https://merqba.com/wp-content/plugins/dokan-lite/assets/images/default-store-banner.png',
-        rating: 5.0,
-        ratingCount: 56,
-        storeUrl: `${WC_STORE_URL}/store/yadiel/`,
-        phone: '+53 5 000 0000',
-        address: 'Roberto Fleites, Santa Clara, Villa Clara, Cuba',
-      },
-      87: {
-        id: 87,
-        name: 'Surticuba',
-        storeName: 'Surticuba',
-        email: 'surticuba@gmail.com',
-        avatar: 'https://images.unsplash.com/photo-1578575437130-527eed3abbec?w=150&auto=format&fit=crop&q=80',
-        banner: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&auto=format&fit=crop&q=80',
-        rating: 4.8,
-        ratingCount: 39,
-        storeUrl: `${WC_STORE_URL}/store/surticuba/`,
-        phone: '+53 5 111 2233',
-        address: 'Santa Clara, Cuba',
-      },
-      191: {
-        id: 191,
-        name: 'Los Chanas Los Chanas',
-        storeName: 'Los Chanas Ferretería',
-        email: 'loschanas@gmail.com',
-        avatar: 'https://merqba.com/wp-content/uploads/2026/10/cropped-IMG_20261026_093719.jpg',
-        banner: 'https://merqba.com/wp-content/uploads/2026/10/cropped-Ferreteria-Los-Chanas_-Fuerza-y-Herramientas-1.jpg',
-        rating: 4.9,
-        ratingCount: 15,
-        storeUrl: `${WC_STORE_URL}/store/los-chanas-ferreter-a/`,
-        phone: '+53 5 333 4455',
-        address: 'Circunvalación e/ Roble y Autopista, Santa Clara, Cuba',
-      },
-      205: {
-        id: 205,
-        name: 'Mercado Central',
-        storeName: 'Mercado Central Merqba',
-        email: 'mercadocentral@gmail.com',
-        avatar: 'https://images.unsplash.com/photo-1534723452862-4c874018d66d?w=150&auto=format&fit=crop&q=80',
-        banner: 'https://images.unsplash.com/photo-1542838132-92c53300491e?w=800&auto=format&fit=crop&q=80',
-        rating: 4.9,
-        ratingCount: 82,
-        storeUrl: `${WC_STORE_URL}/store/mercado-central/`,
-        phone: '+53 5 444 5566',
-        address: 'Calle Cuba e/ Candelaria y San Pedro, Santa Clara',
-      },
-      312: {
-        id: 312,
-        name: 'El Encanto',
-        storeName: 'Boutique El Encanto',
-        email: 'elencanto@gmail.com',
-        avatar: 'https://images.unsplash.com/photo-1472851294608-062f824d29cc?w=150&auto=format&fit=crop&q=80',
-        banner: 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=800&auto=format&fit=crop&q=80',
-        rating: 4.7,
-        ratingCount: 28,
-        storeUrl: `${WC_STORE_URL}/store/el-encanto/`,
-        phone: '+53 5 555 6677',
-        address: 'Boulevard de Santa Clara, Villa Clara',
-      },
-      420: {
-        id: 420,
-        name: 'TuEnvío Villa Clara',
-        storeName: 'TuEnvío Santa Clara',
-        email: 'tuenvio@gmail.com',
-        avatar: 'https://images.unsplash.com/photo-1513151233558-d860c5398176?w=150&auto=format&fit=crop&q=80',
-        banner: 'https://images.unsplash.com/photo-1556742049-0a67d553c2a5?w=800&auto=format&fit=crop&q=80',
-        rating: 4.6,
-        ratingCount: 64,
-        storeUrl: `${WC_STORE_URL}/store/tuenvio-santa-clara/`,
-        phone: '+53 5 777 8899',
-        address: 'Carretera Central, Santa Clara',
-      },
-      535: {
-        id: 535,
-        name: 'La Pillar',
-        storeName: 'Gourmet La Pillar',
-        email: 'lapillar@gmail.com',
-        avatar: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?w=150&auto=format&fit=crop&q=80',
-        banner: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&auto=format&fit=crop&q=80',
-        rating: 5.0,
-        ratingCount: 41,
-        storeUrl: `${WC_STORE_URL}/store/la-pillar/`,
-        phone: '+53 5 888 9900',
-        address: 'Reparto Vigía, Santa Clara',
-      },
-      640: {
-        id: 640,
-        name: 'Supermercado Artex',
-        storeName: 'Supermercado Artex Villa Clara',
-        email: 'artex@gmail.com',
-        avatar: 'https://images.unsplash.com/photo-1563245372-f21724e3856d?w=150&auto=format&fit=crop&q=80',
-        banner: 'https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=800&auto=format&fit=crop&q=80',
-        rating: 4.8,
-        ratingCount: 22,
-        storeUrl: `${WC_STORE_URL}/store/supermercado-artex/`,
-        phone: '+53 5 999 0011',
-        address: 'Centro Ciudad, Santa Clara',
-      },
-    };
-
+    // 3. Authentication Succeeded! Match vendor profile from known vendors
     // If vendorId is provided, check if it matches
     let matchedVendor = vendorId ? knownVendors[Number(vendorId)] : null;
 
@@ -305,7 +292,52 @@ app.get('/api/woocommerce/products', async (req, res) => {
     clearTimeout(timeout);
 
     if (!response.ok) {
-      console.warn(`WooCommerce API answered with status: ${response.status} ${response.statusText}`);
+      console.warn(`WooCommerce API answered with status: ${response.status} ${response.statusText}, trying Dokan multi-vendor live products...`);
+      try {
+        const storeIdToFetch = vendorIdParam || 1;
+        const dokanRes = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/stores/${storeIdToFetch}/products?per_page=100`, {
+          headers: { 'User-Agent': 'MerqbaFA/1.0', Accept: 'application/json' },
+        });
+
+        if (dokanRes.ok) {
+          const dokanProducts = await dokanRes.json();
+          if (Array.isArray(dokanProducts) && dokanProducts.length > 0) {
+            const mapped = dokanProducts.map((item: any) => {
+              const priceNum = item.price && item.price !== '' ? parseFloat(item.price) : (item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : 0);
+              const regularNum = item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : priceNum;
+              const saleNum = item.sale_price && item.sale_price !== '' ? parseFloat(item.sale_price) : undefined;
+              const qty = item.stock_quantity !== null && item.stock_quantity !== undefined ? Number(item.stock_quantity) : 0;
+              return {
+                id: item.id,
+                vendorId: storeIdToFetch,
+                name: item.name || 'Sin nombre',
+                sku: item.sku || `SKU-${item.id}`,
+                regularPrice: isNaN(regularNum) ? 0 : regularNum,
+                salePrice: saleNum !== undefined && !isNaN(saleNum) ? saleNum : undefined,
+                price: isNaN(priceNum) ? 0 : priceNum,
+                stockQuantity: isNaN(qty) ? 0 : qty,
+                stockStatus: qty > 0 ? 'instock' : (item.in_stock ? 'instock' : 'outofstock'),
+                manageStock: Boolean(item.manage_stock),
+                imageUrl: item.images?.[0]?.src || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500',
+                category: item.categories?.[0]?.name || 'General',
+                tags: Array.isArray(item.tags) ? item.tags.map((t: any) => t.name) : [],
+                lastModified: item.date_modified || new Date().toISOString(),
+              };
+            });
+
+            return res.json({
+              success: true,
+              source: 'live_dokan_store',
+              count: mapped.length,
+              products: mapped,
+              vendors: Object.values(knownVendors),
+            });
+          }
+        }
+      } catch (dokanErr: any) {
+        console.warn('Dokan fallback notice:', dokanErr.message);
+      }
+
       return res.status(200).json({
         success: false,
         source: 'store_api_notice',

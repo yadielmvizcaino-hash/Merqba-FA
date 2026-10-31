@@ -1,14 +1,15 @@
 import React from 'react';
-import { Store, Star, PackageCheck, AlertTriangle, Layers, UserCheck, ShieldCheck } from 'lucide-react';
+import { Store, Star, PackageCheck, AlertTriangle, Layers, UserCheck, ShieldCheck, LogOut } from 'lucide-react';
 import { DokanVendor, Product } from '../types';
 
 interface VendorBarProps {
   vendor: DokanVendor;
   products: Product[];
   onOpenVendorLogin: () => void;
+  onLogout?: () => void;
 }
 
-export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVendorLogin }) => {
+export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVendorLogin, onLogout }) => {
   const inStockCount = products.filter((p) => p.stockStatus === 'instock' && p.stockQuantity > 0).length;
   const outOfStockCount = products.filter((p) => p.stockStatus === 'outofstock' || p.stockQuantity === 0).length;
   const modifiedCount = products.filter((p) => p.isModifiedLocally).length;
@@ -73,6 +74,17 @@ export const VendorBar: React.FC<VendorBarProps> = ({ vendor, products, onOpenVe
             <UserCheck className="w-3.5 h-3.5" />
             <span>Cambiar</span>
           </button>
+
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg font-bold transition-colors cursor-pointer shrink-0 border border-red-200"
+              title="Cerrar Sesión"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Cerrar Sesión</span>
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -36,7 +36,7 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
-  const [authUsername, setAuthUsername] = useState(currentVendor.email || 'yadielmvizcaino@gmail.com');
+  const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);

@@ -39,6 +39,8 @@ import {
   Send,
   Sparkles,
   Zap,
+  LogIn,
+  LogOut,
 } from 'lucide-react';
 
 export default function App() {
@@ -128,28 +130,30 @@ export default function App() {
     };
   }, []);
 
-  // Initialize data on mount and auto-sync with live Merqba store
+  // Initialize data on mount: do not load products if not authenticated
   useEffect(() => {
-    const loadedProducts = getStoredProducts();
+    if (hasAuthCookie) {
+      const loadedProducts = getStoredProducts();
+      setProducts(loadedProducts);
+    } else {
+      setProducts([]);
+    }
     const loadedVendors = getStoredVendors();
     const activeId = getCurrentVendorId();
     const loadedLogs = getStoredWebhookLogs();
 
-    setProducts(loadedProducts);
     setVendors(loadedVendors);
     setActiveVendorId(activeId);
     setWebhookLogs(loadedLogs);
     setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
-
-    // Catalog loads from local storage. Use manual 'Sincronizar' button to query kvm1.
-  }, []);
+  }, [hasAuthCookie]);
 
   // Save products to storage whenever updated
   useEffect(() => {
-    if (products.length > 0) {
+    if (isAuthenticated && products.length > 0) {
       saveStoredProducts(products);
     }
-  }, [products]);
+  }, [products, isAuthenticated]);
 
   // Current logged in vendor
   const currentVendor = useMemo(() => {
@@ -168,14 +172,11 @@ export default function App() {
     };
   }, [vendors, currentVendorId]);
 
-  // VENDOR ISOLATION: "🔥Filtrado por vendedor . solo debe mostrar productos del vendedor logueado"
+  // VENDOR ISOLATION: Do not return any products unless authenticated
   const vendorProducts = useMemo(() => {
-    const filtered = products.filter((p) => p.vendorId === currentVendor.id);
-    if (filtered.length === 0 && products.length > 0) {
-      return products;
-    }
-    return filtered;
-  }, [products, currentVendor.id]);
+    if (!isAuthenticated) return [];
+    return products.filter((p) => p.vendorId === currentVendor.id);
+  }, [products, currentVendor.id, isAuthenticated]);
 
   // Available categories for this vendor
   const vendorCategories = useMemo(() => {
@@ -307,13 +308,17 @@ export default function App() {
   const handleSync = async (silent = false) => {
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/woocommerce/products');
+      const res = await fetch(`/api/woocommerce/products?vendor_id=${currentVendorId}`);
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.products) && data.products.length > 0) {
-          // 1. Update all products from Merqba
-          setProducts(data.products);
-          saveStoredProducts(data.products);
+          // 1. Update products for active vendor
+          setProducts((prev) => {
+            const others = prev.filter((p) => p.vendorId !== currentVendorId);
+            const combined = [...data.products, ...others];
+            saveStoredProducts(combined);
+            return combined;
+          });
 
           // 2. Update vendors from live Merqba stores discovered
           if (Array.isArray(data.vendors) && data.vendors.length > 0) {
@@ -407,18 +412,58 @@ export default function App() {
     }
   };
 
-  // Handle vendor selection
-  const handleSelectVendor = (vendor: DokanVendor) => {
+  // Handle vendor selection / login
+  const handleSelectVendor = async (vendor: DokanVendor) => {
+    setIsAuthenticated(true);
     setActiveVendorId(vendor.id);
     setCurrentVendorId(vendor.id);
     setSearchQuery('');
     setStatusFilter('all');
     setSelectedCategory('all');
-    addToast(
-      'info',
-      'Sesión Iniciada',
-      `Accediendo al catálogo de "${vendor.storeName}" (ID #${vendor.id}).`
-    );
+    setIsLoginOpen(false);
+
+    // Fetch this vendor's live products from WooCommerce
+    setIsSyncing(true);
+    try {
+      const res = await fetch(`/api/woocommerce/products?vendor_id=${vendor.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.products)) {
+          setProducts((prev) => {
+            const others = prev.filter((p) => p.vendorId !== vendor.id);
+            const combined = [...data.products, ...others];
+            saveStoredProducts(combined);
+            return combined;
+          });
+          addToast(
+            'success',
+            'Catálogo Cargado',
+            `Conectado a "${vendor.storeName}". ${data.products.length} productos cargados en vivo.`
+          );
+          return;
+        }
+      }
+      addToast(
+        'info',
+        'Sesión Iniciada',
+        `Accediendo al catálogo de "${vendor.storeName}".`
+      );
+    } catch (e: any) {
+      console.warn('Sync on vendor login warning:', e);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Handle logout
+  const handleLogout = () => {
+    document.cookie = 'merqba_auth=; path=/; max-age=0';
+    document.cookie = 'merqba_vendor_id=; path=/; max-age=0';
+    localStorage.removeItem('merchant_pulse_products_v1');
+    setIsAuthenticated(false);
+    setProducts([]);
+    setIsLoginOpen(true);
+    addToast('info', 'Sesión Cerrada', 'Has cerrado sesión. Ingresa con una cuenta para ver y gestionar productos.');
   };
 
   // Handle adding custom vendor
@@ -523,117 +568,148 @@ export default function App() {
         onOpenWebhookLogs={() => setIsWebhookOpen(true)}
         lastSyncTime={lastSyncTime}
         isOnline={isOnline}
+        isAuthenticated={isAuthenticated}
+        onLogout={handleLogout}
       />
 
-      {/* 2. Dokan Vendor Identification & Store Metrics Bar */}
-      <VendorBar
-        vendor={currentVendor}
-        products={vendorProducts}
-        onOpenVendorLogin={() => setIsLoginOpen(true)}
-      />
+      {isAuthenticated ? (
+        <>
+          {/* 2. Dokan Vendor Identification & Store Metrics Bar */}
+          <VendorBar
+            vendor={currentVendor}
+            products={vendorProducts}
+            onOpenVendorLogin={() => setIsLoginOpen(true)}
+            onLogout={handleLogout}
+          />
 
-      {/* 3. Product Filter & Search Bar: "🔥Añadir filtro de productos" */}
-      <FilterBar
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-        selectedCategory={selectedCategory}
-        onCategoryChange={setSelectedCategory}
-        categories={vendorCategories}
-        sortOption={sortOption}
-        onSortChange={setSortOption}
-        totalResults={vendorProducts.length}
-        totalFiltered={displayProducts.length}
-        onResetFilters={() => {
-          setSearchQuery('');
-          setStatusFilter('all');
-          setSelectedCategory('all');
-        }}
-      />
+          {/* 3. Product Filter & Search Bar */}
+          <FilterBar
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            selectedCategory={selectedCategory}
+            onCategoryChange={setSelectedCategory}
+            categories={vendorCategories}
+            sortOption={sortOption}
+            onSortChange={setSortOption}
+            totalResults={vendorProducts.length}
+            totalFiltered={displayProducts.length}
+            onResetFilters={() => {
+              setSearchQuery('');
+              setStatusFilter('all');
+              setSelectedCategory('all');
+            }}
+          />
 
-      {/* 4. Products List Canvas */}
-      <main className="max-w-[2400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 w-full flex-1">
-        {/* Results bar */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
-          <div className="text-xs text-[#64748B]">
-            Mostrando <strong className="text-[#0F172A]">{displayProducts.length}</strong> de{' '}
-            <strong className="text-[#0F172A]">{vendorProducts.length}</strong> productos de{' '}
-            <strong className="text-[#EA580C]">{currentVendor.storeName}</strong>
-          </div>
+          {/* 4. Products List Canvas */}
+          <main className="max-w-[2400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 w-full flex-1">
+            {/* Results bar */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
+              <div className="text-xs text-[#64748B]">
+                Mostrando <strong className="text-[#0F172A]">{displayProducts.length}</strong> de{' '}
+                <strong className="text-[#0F172A]">{vendorProducts.length}</strong> productos de{' '}
+                <strong className="text-[#EA580C]">{currentVendor.storeName}</strong>
+              </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Download CSV button for offline audits */}
-            <button
-              onClick={handleDownloadCsv}
-              disabled={displayProducts.length === 0}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#F8FAFC] active:bg-[#F1F5F9] text-[#0F172A] border border-[#CBD5E1] hover:border-[#FF5A00] text-xs font-bold rounded-lg transition-all cursor-pointer shadow-2xs disabled:opacity-50"
-              title="Descargar lista filtrada en archivo CSV para auditoría offline de inventario"
-            >
-              <Download className="w-3.5 h-3.5 text-[#EA580C]" />
-              <span>Descargar CSV ({displayProducts.length})</span>
-            </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Download CSV button for offline audits */}
+                <button
+                  onClick={handleDownloadCsv}
+                  disabled={displayProducts.length === 0}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-[#F8FAFC] active:bg-[#F1F5F9] text-[#0F172A] border border-[#CBD5E1] hover:border-[#FF5A00] text-xs font-bold rounded-lg transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+                  title="Descargar lista filtrada en archivo CSV para auditoría offline de inventario"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#EA580C]" />
+                  <span>Descargar CSV ({displayProducts.length})</span>
+                </button>
 
-            <button
-              onClick={handleAddNewProduct}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
-              title="Añadir nuevo producto a tu tienda"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Añadir Producto</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Product Cards Grid / Dense List optimized for Full HD+ (2400x1080) */}
-        {displayProducts.length > 0 ? (
-          <div className="grid grid-cols-1 xl:grid-cols-2 3xl:grid-cols-3 gap-3">
-            {displayProducts.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                config={config}
-                onUpdateProduct={handleUpdateProduct}
-                onOpenQuickEdit={(p) => setQuickEditProduct(p)}
-                onShareProduct={(p) => setSharingProduct(p)}
-                onDeleteProduct={(p) => setProductToDelete(p)}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="bg-white rounded-2xl border border-[#E2E8F0] p-8 text-center max-w-md mx-auto my-8 space-y-3">
-            <div className="w-12 h-12 bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] rounded-full flex items-center justify-center mx-auto">
-              <PackageSearch className="w-6 h-6" />
+                <button
+                  onClick={handleAddNewProduct}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg transition-all cursor-pointer shadow-xs active:scale-95"
+                  title="Añadir nuevo producto a tu tienda"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Añadir Producto</span>
+                </button>
+              </div>
             </div>
-            <h3 className="font-bold text-sm text-[#0F172A]">No se encontraron productos</h3>
-            <p className="text-xs text-[#64748B]">
-              No hay productos que coincidan con los filtros seleccionados para {currentVendor.storeName}.
-            </p>
+
+            {/* Product Cards Grid / Dense List */}
+            {displayProducts.length > 0 ? (
+              <div className="grid grid-cols-1 xl:grid-cols-2 3xl:grid-cols-3 gap-3">
+                {displayProducts.map((product) => (
+                  <ProductCard
+                    key={product.id}
+                    product={product}
+                    config={config}
+                    onUpdateProduct={handleUpdateProduct}
+                    onOpenQuickEdit={(p) => setQuickEditProduct(p)}
+                    onShareProduct={(p) => setSharingProduct(p)}
+                    onDeleteProduct={(p) => setProductToDelete(p)}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-[#E2E8F0] p-8 text-center max-w-md mx-auto my-8 space-y-3">
+                <div className="w-12 h-12 bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] rounded-full flex items-center justify-center mx-auto">
+                  <PackageSearch className="w-6 h-6" />
+                </div>
+                <h3 className="font-bold text-sm text-[#0F172A]">No se encontraron productos</h3>
+                <p className="text-xs text-[#64748B]">
+                  No hay productos que coincidan con los filtros seleccionados para {currentVendor.storeName}.
+                </p>
+                <button
+                  onClick={() => {
+                    setSearchQuery('');
+                    setStatusFilter('all');
+                    setSelectedCategory('all');
+                  }}
+                  className="px-4 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] hover:from-[#E64C00] hover:to-[#E67E00] text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs"
+                >
+                  Restablecer filtros
+                </button>
+              </div>
+            )}
+          </main>
+
+          {/* 5. Mobile Floating Action Bar */}
+          <BottomMobileBar
+            products={vendorProducts}
+            config={config}
+            pendingCount={pendingChangesCount}
+            filteredCount={displayProducts.length}
+            isDispatching={isDispatchingWebhook}
+            onApplyChanges={handleApplyChanges}
+            onSync={handleSync}
+            onDownloadCsv={handleDownloadCsv}
+          />
+        </>
+      ) : (
+        /* Unauthenticated State: No products are loaded until account is logged in */
+        <main className="max-w-xl mx-auto px-4 py-16 w-full flex-1 flex flex-col items-center justify-center text-center">
+          <div className="bg-white rounded-3xl border border-[#E2E8F0] p-8 sm:p-10 shadow-xl space-y-5 w-full">
+            <div className="w-16 h-16 bg-[#FFF7ED] text-[#EA580C] border-2 border-[#FED7AA] rounded-2xl flex items-center justify-center mx-auto shadow-xs">
+              <LogIn className="w-8 h-8 text-[#FF5A00]" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl sm:text-2xl font-black text-[#0F172A]">
+                Inicia sesión en Merqba
+              </h2>
+              <p className="text-xs sm:text-sm text-[#64748B] leading-relaxed">
+                Los productos no se cargarán hasta que ingreses con la cuenta de tu tienda o vendedor de Merqba.
+              </p>
+            </div>
             <button
-              onClick={() => {
-                setSearchQuery('');
-                setStatusFilter('all');
-                setSelectedCategory('all');
-              }}
-              className="px-4 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] hover:from-[#E64C00] hover:to-[#E67E00] text-white text-xs font-bold rounded-lg cursor-pointer shadow-xs"
+              onClick={() => setIsLoginOpen(true)}
+              className="w-full py-3.5 px-6 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-sm font-bold rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-[0.99]"
             >
-              Restablecer filtros
+              <LogIn className="w-4 h-4" />
+              <span>Iniciar Sesión para Cargar Productos</span>
             </button>
           </div>
-        )}
-      </main>
-
-      {/* 5. Mobile Floating Action Bar */}
-      <BottomMobileBar
-        products={vendorProducts}
-        config={config}
-        pendingCount={pendingChangesCount}
-        filteredCount={displayProducts.length}
-        isDispatching={isDispatchingWebhook}
-        onApplyChanges={handleApplyChanges}
-        onSync={handleSync}
-        onDownloadCsv={handleDownloadCsv}
-      />
+        </main>
+      )}
 
       {/* 6. Modals */}
       <ProductQuickEditModal
