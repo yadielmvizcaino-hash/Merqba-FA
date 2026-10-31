@@ -98,7 +98,9 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
       manageStock: true,
       sku: sku.trim() || `SKU-${Date.now().toString().slice(-6)}`,
       category: finalCategory,
-      imageUrl: imageUrl.trim() || 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=500&auto=format&fit=crop&q=80',
+      imageUrl: imageUrl.trim().startsWith('http')
+        ? imageUrl.trim()
+        : 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png',
       description: description.trim(),
     };
 
@@ -133,7 +135,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
             <div>
               <h2 className="text-sm font-bold text-white">Añadir Nuevo Producto</h2>
               <p className="text-[11px] text-slate-400">
-                Para: <span className="text-[#FFA000] font-medium">{vendor.storeName}</span>
+                Para vendedor: <span className="text-[#FFA000] font-bold">{vendor.storeName}</span> (ID #{vendor.id})
               </p>
             </div>
           </div>
@@ -313,44 +315,95 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
           )}
 
           {/* Image Section */}
-          <div>
-            <label className="block text-xs font-bold text-[#0F172A] mb-1.5">
-              Imagen del Producto
-            </label>
-            <div className="flex items-center gap-3">
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold text-[#0F172A]">
+                Imagen del Producto (URL Directa para WooCommerce)
+              </label>
+              <span className="text-[10px] text-[#64748B]">Requiere enlace .jpg / .png</span>
+            </div>
+
+            <div className="flex items-start gap-3">
               <div className="relative w-16 h-16 rounded-xl overflow-hidden border-2 border-[#CBD5E1] bg-[#F1F5F9] shrink-0 flex items-center justify-center">
                 {imageUrl ? (
-                  <img src={imageUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                  <img
+                    src={imageUrl}
+                    alt="Vista previa"
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png';
+                    }}
+                  />
                 ) : (
                   <ImageIcon className="w-6 h-6 text-[#94A3B8]" />
                 )}
               </div>
 
-              <div className="flex-1 space-y-1.5">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isSubmitting}
-                  className="w-full py-1.5 px-3 border border-[#CBD5E1] hover:border-[#FF5A00] bg-[#F8FAFC] hover:bg-white text-xs font-semibold text-[#0F172A] rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs disabled:opacity-50"
-                >
-                  <Upload className="w-3.5 h-3.5 text-[#FF5A00]" />
-                  <span>Subir imagen desde dispositivo</span>
-                </button>
+              <div className="flex-1 space-y-2">
                 <input
                   type="url"
-                  placeholder="O pega aquí una URL de imagen (https://...)"
+                  placeholder="https://ejemplo.com/foto-producto.jpg"
                   value={imageUrl.startsWith('data:') ? '' : imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
                   disabled={isSubmitting}
-                  className="w-full px-2.5 py-1 bg-[#F8FAFC] border border-[#CBD5E1] rounded text-[11px] text-[#0F172A] focus:outline-none focus:border-[#FF5A00]"
+                  className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#FF5A00]"
                 />
+
+                {/* Presets for quick selection */}
+                <div>
+                  <span className="text-[10px] font-semibold text-[#64748B] block mb-1">
+                    O elige una imagen de catálogo sugerida:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl('https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png')}
+                      className="px-2 py-0.5 text-[10px] bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] rounded-md border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      Logo Merqba
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl('https://images.unsplash.com/photo-1581783342308-f792dbdd27c5.jpg')}
+                      className="px-2 py-0.5 text-[10px] bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] rounded-md border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      Ferretería / Herramientas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl('https://images.unsplash.com/photo-1550751827-4bd374c3f58b.jpg')}
+                      className="px-2 py-0.5 text-[10px] bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] rounded-md border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      Electricidad / Luces
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setImageUrl('https://images.unsplash.com/photo-1522337360788-8b13dee7a37e.jpg')}
+                      className="px-2 py-0.5 text-[10px] bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] rounded-md border border-slate-200 transition-colors cursor-pointer"
+                    >
+                      Belleza / Cuidado
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-0.5">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isSubmitting}
+                    className="py-1 px-2.5 border border-[#CBD5E1] hover:border-[#FF5A00] bg-[#F8FAFC] hover:bg-white text-[11px] font-medium text-[#475569] rounded-md transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    <Upload className="w-3 h-3 text-[#FF5A00]" />
+                    <span>Cargar desde dispositivo (vista previa)</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

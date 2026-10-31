@@ -353,7 +353,14 @@ app.get('/api/woocommerce/products', async (req, res) => {
       const vendorsMap: Record<number, any> = {};
 
       const mapped = rawData.map((item: any) => {
-        const storeId = item.store?.id ? Number(item.store.id) : (item.author ? Number(item.author) : (vendorIdParam || 1));
+        // Prioritize Dokan vendor ID stored in meta_data over default admin post_author
+        const dokanMeta = item.meta_data?.find(
+          (m: any) => m.key === '_dokan_vendor_id' || m.key === 'dokan_vendor' || m.key === '_dokan_store_id'
+        )?.value;
+        const vendorFromMeta = dokanMeta ? parseInt(String(dokanMeta), 10) : null;
+        const storeId =
+          vendorFromMeta ||
+          (item.store?.id ? Number(item.store.id) : (item.author ? Number(item.author) : (vendorIdParam || 1)));
 
         if (item.store && item.store.id && !vendorsMap[storeId]) {
           vendorsMap[storeId] = {
@@ -389,7 +396,7 @@ app.get('/api/woocommerce/products', async (req, res) => {
           stockQuantity: isNaN(qty) ? 0 : qty,
           stockStatus: item.stock_status || (qty > 0 ? 'instock' : 'outofstock'),
           manageStock: Boolean(item.manage_stock),
-          imageUrl: item.images?.[0]?.src || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500',
+          imageUrl: item.images?.[0]?.src || 'https://merqba.com/wp-content/uploads/2026/05/merqba-logo-icon.png',
           category: item.categories?.[0]?.name || 'General',
           tags: Array.isArray(item.tags) ? item.tags.map((t: any) => t.name) : [],
           lastModified: item.date_modified || new Date().toISOString(),
@@ -420,15 +427,38 @@ app.get('/api/woocommerce/products', async (req, res) => {
   }
 });
 
+// Helper to normalize and ensure image URL has a clean image extension required by WooCommerce
+function prepareWcImageUrl(rawUrl?: string): string | null {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  const trimmed = rawUrl.trim();
+  if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return null;
+
+  // If already an image URL with standard extension
+  const lower = trimmed.toLowerCase();
+  if (lower.includes('.jpg') || lower.includes('.jpeg') || lower.includes('.png') || lower.includes('.webp')) {
+    return trimmed;
+  }
+
+  // If it's a known service like unsplash or picsum, format with extension
+  if (trimmed.includes('unsplash.com')) {
+    // Strip query parameters that cause WordPress media_sideload_image filename failure
+    const cleanBase = trimmed.split('?')[0];
+    return `${cleanBase}.jpg`;
+  }
+
+  // Fallback to Merqba default logo icon if unknown extension
+  return 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png';
+}
+
 // 3. Create Product on WooCommerce REST API
 app.post('/api/woocommerce/products', async (req, res) => {
   const productData = req.body;
   const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products`;
 
-  // Only pass image URL if it is a valid web URL; avoid raw data URLs which WooCommerce rejects with 400
-  const hasWebImage =
-    typeof productData.imageUrl === 'string' &&
-    (productData.imageUrl.startsWith('http://') || productData.imageUrl.startsWith('https://'));
+  // Process and sanitize image URL
+  const validImageUrl = prepareWcImageUrl(productData.imageUrl) || 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png';
+
+  const vendorIdNum = productData.vendorId ? Number(productData.vendorId) : 1;
 
   const wcPayload: any = {
     name: productData.name || 'Nuevo Producto',
@@ -439,24 +469,28 @@ app.post('/api/woocommerce/products', async (req, res) => {
     manage_stock: Boolean(productData.manageStock),
     stock_quantity: Number(productData.stockQuantity || 0),
     stock_status: Number(productData.stockQuantity || 0) > 0 ? 'instock' : 'outofstock',
+    author: vendorIdNum,
+    post_author: vendorIdNum,
   };
 
   if (productData.salePrice !== undefined && productData.salePrice !== '') {
     wcPayload.sale_price = String(productData.salePrice);
   }
 
-  if (hasWebImage) {
-    wcPayload.images = [{ src: productData.imageUrl }];
-  }
+  // Attach image
+  wcPayload.images = [{ src: validImageUrl }];
 
   if (productData.category && productData.category.trim() && productData.category !== 'General') {
     wcPayload.categories = [{ name: productData.category.trim() }];
   }
 
-  // Dokan vendor assignment if vendorId is provided
-  if (productData.vendorId) {
-    wcPayload.meta_data = [{ key: '_dokan_vendor_id', value: String(productData.vendorId) }];
-  }
+  // Dokan vendor assignment via metadata
+  wcPayload.meta_data = [
+    { key: '_dokan_vendor_id', value: String(vendorIdNum) },
+    { key: 'dokan_vendor', value: String(vendorIdNum) },
+    { key: '_dokan_store_id', value: String(vendorIdNum) },
+    { key: 'n8n_triguer', value: 'true' },
+  ];
 
   try {
     const controller = new AbortController();
