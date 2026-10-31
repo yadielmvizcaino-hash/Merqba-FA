@@ -41,9 +41,30 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         if (event.target?.result) {
-          setImageUrl(event.target.result as string);
+          const base64 = event.target.result as string;
+          setImageUrl(base64); // temporary preview
+          try {
+            setIsSubmitting(true);
+            const res = await fetch('/api/woocommerce/upload-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                filename: file.name,
+                fileData: base64,
+                mimeType: file.type || 'image/jpeg',
+              }),
+            });
+            const data = await res.json();
+            if (data.success && data.url) {
+              setImageUrl(data.url);
+            }
+          } catch (err) {
+            console.warn('Image upload fallback notice:', err);
+          } finally {
+            setIsSubmitting(false);
+          }
         }
       };
       reader.readAsDataURL(file);
