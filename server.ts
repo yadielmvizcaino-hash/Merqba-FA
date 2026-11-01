@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -11,12 +12,42 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
+// Ensure public/uploads directory exists for resilient media persistence
+const uploadsDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Serve uploaded images statically
+app.use('/uploads', express.static(uploadsDir));
+
 // Secure WooCommerce Store Configuration (Server-Side Only - never exposed to public UI)
 const WC_STORE_URL = (process.env.WC_STORE_URL || 'https://merqba.com').replace(/\/+$/, '');
 const WC_CONSUMER_KEY = 'ck_115fce2ee9779ca57b79bd19811d44be9dd6b9b2';
 const WC_CONSUMER_SECRET = 'cs_7b5ddadd4a04c6996d04430974564928a58ca12a';
 
 app.use(express.json({ limit: '15mb' }));
+
+interface ActiveSession {
+  username: string;
+  password?: string;
+  cookies?: string;
+  vendorId?: number;
+}
+let activeSessionUser: ActiveSession | null = null;
+
+const escapeXml = (unsafe: string): string => {
+  return unsafe.replace(/[<>&'"]/g, (c) => {
+    switch (c) {
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '&': return '&amp;';
+      case '\'': return '&apos;';
+      case '"': return '&quot;';
+      default: return c;
+    }
+  });
+};
 
 const getWcAuthHeader = () => {
   const token = Buffer.from(`${WC_CONSUMER_KEY}:${WC_CONSUMER_SECRET}`).toString('base64');
@@ -147,6 +178,7 @@ app.post('/api/woocommerce/login', async (req, res) => {
     // 1. Direct Merqba Form Authentication via /mi-cuenta/
     let isWcSuccess = false;
     let wcErrorMessage: string | null = null;
+    let postCookies = '';
 
     try {
       const initial = await fetch(`${WC_STORE_URL}/mi-cuenta/`, {
@@ -176,7 +208,7 @@ app.post('/api/woocommerce/login', async (req, res) => {
         redirect: 'manual',
       });
 
-      const postCookies = postRes.headers.get('set-cookie') || '';
+      postCookies = postRes.headers.get('set-cookie') || '';
       isWcSuccess = postCookies.includes('wordpress_logged_in') || postRes.status === 302;
 
       if (!isWcSuccess) {
@@ -256,6 +288,13 @@ app.post('/api/woocommerce/login', async (req, res) => {
       };
     }
 
+    activeSessionUser = {
+      username: cleanUser,
+      password: cleanPass,
+      cookies: postCookies,
+      vendorId: matchedVendor.id,
+    };
+
     return res.json({
       success: true,
       source: 'woocommerce_live_authenticated',
@@ -271,29 +310,52 @@ app.post('/api/woocommerce/login', async (req, res) => {
   }
 });
 
-// 2. Fetch Products directly from live WooCommerce REST API
+// 2. Fetch Products directly from live WooCommerce REST API with full pagination support
 app.get('/api/woocommerce/products', async (req, res) => {
   const vendorIdParam = req.query.vendor_id ? parseInt(req.query.vendor_id as string, 10) : null;
-  const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products?per_page=100`;
+  
+  let rawData: any[] = [];
+  let lastResponseStatus = 200;
+  let successFetch = false;
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    for (let page = 1; page <= 5; page++) {
+      const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products?per_page=100&page=${page}`;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9000);
 
-    const response = await fetch(targetUrl, {
-      method: 'GET',
-      headers: {
-        Authorization: getWcAuthHeader(),
-        Accept: 'application/json',
-        'User-Agent': 'MerqbaFA/1.0',
-      },
-      signal: controller.signal,
-    });
+      const response = await fetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          Authorization: getWcAuthHeader(),
+          Accept: 'application/json',
+          'User-Agent': 'MerqbaFA/1.0',
+        },
+        signal: controller.signal,
+      });
 
-    clearTimeout(timeout);
+      clearTimeout(timeout);
+      lastResponseStatus = response.status;
 
-    if (!response.ok) {
-      console.warn(`WooCommerce API answered with status: ${response.status} ${response.statusText}, trying Dokan multi-vendor live products...`);
+      if (!response.ok) {
+        break;
+      }
+
+      const pageData = await response.json();
+      if (!Array.isArray(pageData) || pageData.length === 0) {
+        break;
+      }
+
+      rawData = rawData.concat(pageData);
+      successFetch = true;
+
+      if (pageData.length < 100) {
+        break; // reached end of pagination
+      }
+    }
+
+    if (!successFetch || rawData.length === 0) {
+      console.warn(`WooCommerce API answered with status: ${lastResponseStatus}, trying Dokan multi-vendor live products...`);
       try {
         const storeIdToFetch = vendorIdParam || 1;
         const dokanRes = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/stores/${storeIdToFetch}/products?per_page=100`, {
@@ -344,12 +406,11 @@ app.get('/api/woocommerce/products', async (req, res) => {
       return res.status(200).json({
         success: false,
         source: 'store_api_notice',
-        message: `La API de WooCommerce respondió con estado ${response.status}`,
+        message: `La API de WooCommerce respondió con estado ${lastResponseStatus}`,
         products: [],
       });
     }
 
-    const rawData = await response.json();
     if (Array.isArray(rawData)) {
       const vendorsMap: Record<number, any> = {};
 
@@ -572,9 +633,79 @@ app.post('/api/woocommerce/products', async (req, res) => {
   }
 });
 
-// 3b. Upload Image to WordPress Media Library for WooCommerce
+// Helper to upload media directly to WordPress Database via XML-RPC (wp.uploadFile)
+async function uploadToWordPressXmlRpc(
+  username: string,
+  pass: string,
+  filename: string,
+  mimeType: string,
+  base64Data: string
+): Promise<{ success: boolean; id?: string; url?: string; error?: string }> {
+  try {
+    const cleanBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+
+    const xmlPayload = `<?xml version="1.0" encoding="utf-8"?>
+<methodCall>
+  <methodName>wp.uploadFile</methodName>
+  <params>
+    <param><value><int>1</int></value></param>
+    <param><value><string>${escapeXml(username)}</string></value></param>
+    <param><value><string>${escapeXml(pass)}</string></value></param>
+    <param>
+      <value>
+        <struct>
+          <member><name>name</name><value><string>${escapeXml(safeName)}</string></value></member>
+          <member><name>type</name><value><string>${escapeXml(mimeType)}</string></value></member>
+          <member><name>bits</name><value><base64>${cleanBase64}</base64></value></member>
+          <member><name>overwrite</name><value><boolean>0</boolean></value></member>
+        </struct>
+      </value>
+    </param>
+  </params>
+</methodCall>`;
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+
+    const response = await fetch(`${WC_STORE_URL}/xmlrpc.php`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/xml',
+        'User-Agent': 'MerqbaFA/1.0',
+      },
+      body: xmlPayload,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    const resText = await response.text();
+    if (resText.includes('<fault>')) {
+      const faultStringMatch = resText.match(/<name>faultString<\/name>\s*<value><string>([^<]+)<\/string><\/value>/i);
+      const faultMsg = faultStringMatch ? faultStringMatch[1] : 'Error de autenticación en WordPress XML-RPC';
+      return { success: false, error: faultMsg };
+    }
+
+    const idMatch = resText.match(/<name>id<\/name>\s*<value>(?:<string>|<int>)?([^<]+)(?:<\/string>|<\/int>)?<\/value>/i);
+    const urlMatch = resText.match(/<name>url<\/name>\s*<value><string>([^<]+)<\/string><\/value>/i);
+
+    if (urlMatch && urlMatch[1]) {
+      return {
+        success: true,
+        id: idMatch ? idMatch[1].trim() : undefined,
+        url: urlMatch[1].trim(),
+      };
+    }
+
+    return { success: false, error: 'Respuesta XML-RPC inesperada sin URL de adjunto' };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+// 3b. Upload Image to WordPress Media Database & Attach to WooCommerce Product
 app.post('/api/woocommerce/upload-image', async (req, res) => {
-  const { filename, fileData, mimeType } = req.body;
+  const { filename, fileData, mimeType, productId, username, password } = req.body;
   if (!fileData) {
     return res.status(400).json({ success: false, message: 'No se proporcionó archivo de imagen' });
   }
@@ -582,46 +713,98 @@ app.post('/api/woocommerce/upload-image', async (req, res) => {
   try {
     const base64Data = fileData.replace(/^data:image\/\w+;base64,/, '');
     const buffer = Buffer.from(base64Data, 'base64');
-    const safeName = filename || `merqba-product-${Date.now()}.jpg`;
+    const ext = (mimeType?.split('/')[1] || 'jpg').replace('jpeg', 'jpg');
+    const safeName = (filename || `merqba-prod-${Date.now()}.${ext}`).replace(/[^a-zA-Z0-9._-]/g, '_');
     const contentType = mimeType || 'image/jpeg';
 
-    const wpMediaUrl = `${WC_STORE_URL}/wp-json/wp/v2/media`;
-    const wpRes = await fetch(wpMediaUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: getWcAuthHeader(),
-        'Content-Type': contentType,
-        'Content-Disposition': `attachment; filename="${safeName}"`,
-        'User-Agent': 'MerqbaFA/1.0',
-      },
-      body: buffer,
-    });
+    // 1. Resilient local storage save
+    const localFilePath = path.join(uploadsDir, safeName);
+    fs.writeFileSync(localFilePath, buffer);
+    const localUrl = `/uploads/${safeName}`;
 
-    if (wpRes.ok) {
-      const mediaJson = await wpRes.json();
-      const sourceUrl = mediaJson.source_url || mediaJson.guid?.rendered;
-      if (sourceUrl) {
-        return res.json({
-          success: true,
-          url: sourceUrl,
-          message: 'Imagen subida exitosamente a la biblioteca de medios de Merqba',
-        });
+    let uploadedMediaUrl = localUrl;
+    let uploadedMediaId: string | undefined = undefined;
+    let uploadMethod = 'local';
+
+    // 2. Upload directly to WordPress Media Database (wp_posts & wp-content/uploads) via XML-RPC
+    const effectiveUser = username || activeSessionUser?.username;
+    const effectivePass = password || activeSessionUser?.password;
+
+    if (effectiveUser && effectivePass) {
+      console.log(`Subiendo imagen a WordPress XML-RPC con usuario: ${effectiveUser}`);
+      const xmlRpcResult = await uploadToWordPressXmlRpc(
+        effectiveUser,
+        effectivePass,
+        safeName,
+        contentType,
+        base64Data
+      );
+
+      if (xmlRpcResult.success && xmlRpcResult.url) {
+        uploadedMediaUrl = xmlRpcResult.url;
+        uploadedMediaId = xmlRpcResult.id;
+        uploadMethod = 'wordpress_xmlrpc';
+        console.log(`Imagen subida con éxito a WordPress Media DB: ID=${uploadedMediaId}, URL=${uploadedMediaUrl}`);
+      } else {
+        console.warn('WordPress XML-RPC upload notice:', xmlRpcResult.error);
       }
     }
 
-    const errText = await wpRes.text();
-    console.warn('WP Media upload notice:', errText);
-    return res.status(200).json({
+    // 3. If productId is provided, immediately link image directly to WooCommerce product
+    if (productId && (uploadedMediaUrl || uploadedMediaId)) {
+      try {
+        const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${productId}`;
+        const imagePayload: any = {
+          images: uploadedMediaId
+            ? [{ id: parseInt(uploadedMediaId, 10), src: uploadedMediaUrl }]
+            : (uploadedMediaUrl.startsWith('http') ? [{ src: uploadedMediaUrl }] : undefined),
+        };
+
+        if (imagePayload.images) {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12000);
+          const updateRes = await fetch(targetUrl, {
+            method: 'PUT',
+            headers: {
+              Authorization: getWcAuthHeader(),
+              'Content-Type': 'application/json',
+              'User-Agent': 'MerqbaFA/1.0',
+            },
+            body: JSON.stringify(imagePayload),
+            signal: controller.signal,
+          });
+          clearTimeout(timeout);
+
+          if (updateRes.ok) {
+            const updatedProduct = await updateRes.json();
+            const wcAttachedUrl = updatedProduct.images?.[0]?.src;
+            if (wcAttachedUrl) {
+              uploadedMediaUrl = wcAttachedUrl;
+            }
+            console.log(`Imagen vinculada con éxito al producto #${productId} en WooCommerce`);
+          } else {
+            console.warn(`Error al asociar imagen a producto #${productId}:`, await updateRes.text());
+          }
+        }
+      } catch (err: any) {
+        console.warn(`Excepción al asociar imagen a producto #${productId}:`, err.message);
+      }
+    }
+
+    return res.json({
       success: true,
-      url: 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png',
-      message: 'Imagen procesada con respaldo predeterminado de Merqba',
+      url: uploadedMediaUrl,
+      id: uploadedMediaId,
+      uploadMethod,
+      message: uploadMethod === 'wordpress_xmlrpc'
+        ? 'Imagen guardada directamente en la base de datos de medios de WordPress'
+        : 'Imagen procesada y asignada al producto',
     });
   } catch (err: any) {
     console.error('Upload image error:', err);
-    return res.status(200).json({
-      success: true,
-      url: 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png',
-      message: 'Imagen procesada con respaldo predeterminado de Merqba',
+    return res.status(500).json({
+      success: false,
+      message: 'Error al procesar la imagen: ' + (err.message || 'Error desconocido'),
     });
   }
 });
@@ -655,6 +838,7 @@ app.post('/api/woocommerce/batch', async (req, res) => {
     manage_stock: true,
     stock_quantity: p.stockQuantity,
     stock_status: p.stockQuantity > 0 && p.stockStatus === 'instock' ? 'instock' : 'outofstock',
+    images: p.imageUrl ? [{ src: p.imageUrl }] : undefined,
   }));
 
   const batchPayload: any = {};

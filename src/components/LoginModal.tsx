@@ -86,6 +86,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         // Set persistent cookie for 1 year so user doesn't need to log in every time
         document.cookie = `merqba_auth=true; path=/; max-age=31536000`;
         document.cookie = `merqba_vendor_id=${verifiedVendor.id}; path=/; max-age=31536000`;
+        try {
+          sessionStorage.setItem('merqba_auth_user', JSON.stringify({ username: targetUser, password: targetPass }));
+        } catch (e) {
+          // ignore storage error
+        }
 
         onSelectVendor(verifiedVendor);
         if (onShowToast) {

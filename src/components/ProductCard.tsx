@@ -9,12 +9,17 @@ import {
   ExternalLink,
   Share2,
   Trash2,
+  Filter,
+  Loader2,
 } from 'lucide-react';
 import { Product, StoreConfig } from '../types';
 
 interface ProductCardProps {
   product: Product;
   config: StoreConfig;
+  isSelected?: boolean;
+  onToggleSelect?: (id: number) => void;
+  onSelectSamePrice?: (price: number) => void;
   onUpdateProduct: (updated: Product) => void;
   onOpenQuickEdit: (product: Product) => void;
   onShareProduct: (product: Product) => void;
@@ -24,6 +29,9 @@ interface ProductCardProps {
 export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   config,
+  isSelected = false,
+  onToggleSelect,
+  onSelectSamePrice,
   onUpdateProduct,
   onOpenQuickEdit,
   onShareProduct,
@@ -40,6 +48,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const [isEditingStock, setIsEditingStock] = useState(false);
   const [tempStock, setTempStock] = useState(product.stockQuantity.toString());
+
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const isOutOfStock = product.stockStatus === 'outofstock' || product.stockQuantity === 0;
 
@@ -156,19 +166,56 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }
   };
 
-  // Image upload from device gallery
+  // Image upload directly to WordPress Media Database & WooCommerce
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         if (event.target?.result) {
+          const base64 = event.target.result as string;
+          // Set preview immediately for rapid visual feedback
           onUpdateProduct({
             ...product,
-            imageUrl: event.target.result as string,
+            imageUrl: base64,
             isModifiedLocally: true,
             lastModified: new Date().toISOString(),
           });
+
+          setIsUploadingImage(true);
+          try {
+            let creds: { username?: string; password?: string } = {};
+            try {
+              const raw = sessionStorage.getItem('merqba_auth_user');
+              if (raw) creds = JSON.parse(raw);
+            } catch (e) {}
+
+            const res = await fetch('/api/woocommerce/upload-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                filename: file.name,
+                fileData: base64,
+                mimeType: file.type || 'image/jpeg',
+                productId: product.id,
+                username: creds.username,
+                password: creds.password,
+              }),
+            });
+            const data = await res.json();
+            if (data.success && data.url) {
+              onUpdateProduct({
+                ...product,
+                imageUrl: data.url,
+                isModifiedLocally: false, // successfully uploaded and assigned to product in WooCommerce
+                lastModified: new Date().toISOString(),
+              });
+            }
+          } catch (err) {
+            console.warn('Error subiendo imagen a WordPress:', err);
+          } finally {
+            setIsUploadingImage(false);
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -177,13 +224,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   return (
     <article
-      className={`group relative bg-white rounded-xl border transition-all shadow-xs ${
-        isOutOfStock
+      className={`group relative bg-white rounded-xl border transition-all shadow-xs p-3 sm:p-4 ${
+        isSelected
+          ? 'border-[#FF5A00] ring-2 ring-[#FF5A00]/40 bg-[#FFFDFB]'
+          : isOutOfStock
           ? 'border-[#FECACA] bg-[#FFFBFB]'
           : product.isModifiedLocally
           ? 'border-[#FDBA74] ring-1 ring-[#FF5A00]/30'
           : 'border-[#E2E8F0] hover:border-[#CBD5E1]'
-      } p-3 sm:p-4`}
+      }`}
     >
       {/* Hidden file input for device gallery upload */}
       <input
@@ -195,18 +244,44 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         aria-label={`Subir imagen para ${product.name}`}
       />
 
-      {/* Modified pill indicator */}
-      {product.isModifiedLocally && (
-        <div className="absolute -top-2.5 right-3 bg-[#0B0E14] text-[#FFA000] border border-[#FF5A00]/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1 z-10">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] animate-ping"></span>
-          Cambio local pendiente
-        </div>
-      )}
+      {/* Top right badges: Local change or Selected badge */}
+      <div className="absolute -top-2.5 right-3 flex items-center gap-1.5 z-10">
+        {isSelected && (
+          <div className="bg-[#FF5A00] text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+            <Check className="w-3 h-3" />
+            <span>Seleccionado</span>
+          </div>
+        )}
+        {product.isModifiedLocally && (
+          <div className="bg-[#0B0E14] text-[#FFA000] border border-[#FF5A00]/40 text-[10px] font-bold px-2 py-0.5 rounded-full shadow-xs flex items-center gap-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#FF5A00] animate-ping"></span>
+            <span>Cambio local pendiente</span>
+          </div>
+        )}
+      </div>
 
       {/* Main card row: optimized for Full HD+ (2400x1080) and dense mobile */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 w-full">
-        {/* Left Cluster: Photo thumbnail + (Directly to the right: Title, ID/SKU badges, Price) */}
-        <div className="flex items-start gap-3 flex-1 min-w-0">
+        {/* Left Cluster: Bulk Selection Checkbox + Photo thumbnail + (Title, ID/SKU badges, Price) */}
+        <div className="flex items-start gap-2.5 sm:gap-3 flex-1 min-w-0">
+          {/* Multi-select Checkbox for Mass Edit */}
+          {onToggleSelect && (
+            <div className="pt-1 shrink-0">
+              <label
+                className="flex items-center justify-center cursor-pointer p-1 -m-1 rounded-md hover:bg-[#F1F5F9]"
+                title="Seleccionar para edición en masa"
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleSelect(product.id)}
+                  className="w-4 h-4 rounded text-[#FF5A00] focus:ring-[#FF5A00] border-[#CBD5E1] cursor-pointer"
+                  aria-label={`Seleccionar ${product.name} para edición en masa`}
+                />
+              </label>
+            </div>
+          )}
+
           {/* Photo Thumbnail */}
           <div className="relative shrink-0 group/img">
             <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-lg overflow-hidden border border-[#E2E8F0] bg-[#F1F5F9] shadow-2xs">
@@ -230,12 +305,21 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               {/* Gallery Upload Overlay button */}
               <button
                 onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingImage}
                 className="absolute inset-0 bg-black/50 opacity-0 group-hover/img:opacity-100 flex flex-col items-center justify-center text-white transition-opacity cursor-pointer p-1 text-center"
                 title="Subir foto desde la galería del dispositivo"
               >
                 <Camera className="w-5 h-5 mb-0.5" />
                 <span className="text-[10px] font-semibold leading-tight">Cambiar foto</span>
               </button>
+
+              {/* Uploading to WordPress Loader Overlay */}
+              {isUploadingImage && (
+                <div className="absolute inset-0 bg-black/85 z-20 flex flex-col items-center justify-center text-white p-1 text-center">
+                  <Loader2 className="w-5 h-5 text-[#FF5A00] animate-spin mb-1" />
+                  <span className="text-[9px] font-bold leading-tight text-[#FFB380]">Subiendo a WordPress...</span>
+                </div>
+              )}
             </div>
 
             <button
@@ -309,7 +393,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </div>
 
             {/* Price & Details Link */}
-            <div className="flex items-center gap-3 flex-wrap pt-0.5">
+            <div className="flex items-center gap-2.5 flex-wrap pt-0.5">
               <div className="flex items-center gap-1.5">
                 <span className="text-[11px] font-semibold text-[#64748B]">Precio:</span>
                 {isEditingPrice ? (
@@ -339,13 +423,26 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                       setIsEditingPrice(true);
                     }}
                     className="flex items-center gap-1 text-sm sm:text-base font-extrabold text-[#0F172A] hover:text-[#FF5A00] px-1.5 py-0.5 rounded hover:bg-[#F1F5F9] cursor-pointer tabular-nums"
-                    title="Clic para editar precio"
+                    title="Clic para editar precio individual"
                   >
                     <span>{config.currencySymbol}{product.price.toFixed(2)}</span>
                     <Edit2 className="w-3 h-3 text-[#94A3B8]" />
                   </button>
                 )}
               </div>
+
+              {/* Quick smart action: Select all products that have this same price */}
+              {onSelectSamePrice && (
+                <button
+                  type="button"
+                  onClick={() => onSelectSamePrice(product.price)}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#FFF7ED] hover:bg-[#FFEDD5] border border-[#FED7AA] text-[#C2410C] rounded text-[10px] font-bold transition-colors cursor-pointer"
+                  title={`Seleccionar todos los productos que tienen precio ${config.currencySymbol}${product.price.toFixed(2)} para editarlos en lote`}
+                >
+                  <Filter className="w-2.5 h-2.5" />
+                  <span>Todos a {config.currencySymbol}{product.price.toFixed(2)}</span>
+                </button>
+              )}
 
               {product.salePrice && (
                 <span className="text-xs text-[#94A3B8] line-through tabular-nums">
@@ -418,7 +515,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   onBlur={handleSaveStock}
                   onKeyDown={(e) => e.key === 'Enter' && handleSaveStock()}
                   autoFocus
-                  className="w-12 text-center text-xs font-bold text-[#0F172A] bg-white border-y-0 border-x border-[#CBD5E1] focus:outline-none tabular-nums"
+                  className="w-12 text-center text-xs sm:text-sm font-bold text-[#0F172A] bg-white border-y-0 border-x border-[#CBD5E1] focus:outline-none tabular-nums"
                 />
               ) : (
                 <button

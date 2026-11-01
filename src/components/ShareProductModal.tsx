@@ -32,8 +32,8 @@ export const ShareProductModal: React.FC<ShareProductModalProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
 
-  // Generate realistic clean product URL matching WooCommerce canonical URL
-  const productSlug =
+  // Generate realistic clean product URL matching WooCommerce canonical URL without ID prefix
+  const rawSlug =
     product.slug ||
     product.name
       .toLowerCase()
@@ -42,10 +42,10 @@ export const ShareProductModal: React.FC<ShareProductModalProps> = ({
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '');
 
-  const productUrl =
-    product.permalink && product.permalink.startsWith('http')
-      ? product.permalink.replace(/\/+$/, '')
-      : `${config.storeUrl.replace(/\/+$/, '')}/producto/${productSlug}`;
+  // Strip leading numeric ID prefix if present (e.g. "2324-tinte..." -> "tinte...")
+  const productSlug = rawSlug.replace(/^\d+-/, '');
+
+  const productUrl = `${config.storeUrl.replace(/\/+$/, '')}/producto/${productSlug}`;
   const priceDisplay = `${config.currencySymbol}${product.price.toFixed(2)}`;
   const isAvailable = product.stockStatus === 'instock' && product.stockQuantity > 0;
   const stockText = isAvailable ? `✅ Disponible (${product.stockQuantity} unidades)` : '⚠️ Agotado temporalmente';

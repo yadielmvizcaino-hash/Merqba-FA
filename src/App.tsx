@@ -29,6 +29,7 @@ import { ShareProductModal } from './components/ShareProductModal';
 import { LoginModal } from './components/LoginModal';
 import { WebhookModal } from './components/WebhookModal';
 import { StoreConfigModal } from './components/StoreConfigModal';
+import { BulkEditModal, BulkEditChanges } from './components/BulkEditModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { BottomMobileBar } from './components/BottomMobileBar';
 import { exportProductsToCsv } from './services/csvExport';
@@ -42,6 +43,12 @@ import {
   Zap,
   LogIn,
   LogOut,
+  Layers,
+  CheckSquare,
+  Square,
+  Check,
+  DollarSign,
+  X,
 } from 'lucide-react';
 
 export default function App() {
@@ -73,11 +80,16 @@ export default function App() {
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
 
-  // Filter states
+  // Filter & Search states
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [sortOption, setSortOption] = useState<SortOption>('name-asc');
+
+  // Mass / Bulk Editing state
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+  const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
+  const [quickPriceInput, setQuickPriceInput] = useState<string>('');
 
   // Modal states
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(!hasAuthCookie);
@@ -248,6 +260,151 @@ export default function App() {
   const pendingChangesCount = useMemo(() => {
     return vendorProducts.filter((p) => p.isModifiedLocally).length;
   }, [vendorProducts]);
+
+  // Selected products for mass/bulk editing
+  const selectedProducts = useMemo(() => {
+    const selectedSet = new Set(selectedProductIds);
+    return vendorProducts.filter((p) => selectedSet.has(p.id));
+  }, [vendorProducts, selectedProductIds]);
+
+  // Bulk selection handlers
+  const handleToggleSelectProduct = (id: number) => {
+    setSelectedProductIds((prev) =>
+      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllFiltered = () => {
+    if (selectedProductIds.length === displayProducts.length && displayProducts.length > 0) {
+      setSelectedProductIds([]);
+    } else {
+      setSelectedProductIds(displayProducts.map((p) => p.id));
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedProductIds([]);
+  };
+
+  // Smart helper: Select all products that share the exact same price
+  const handleSelectSamePrice = (targetPrice: number) => {
+    const matching = vendorProducts.filter((p) => p.price === targetPrice).map((p) => p.id);
+    setSelectedProductIds(matching);
+    addToast(
+      'info',
+      'Productos Seleccionados',
+      `Se seleccionaron ${matching.length} productos con precio ${config.currencySymbol}${targetPrice.toFixed(2)} para edición en masa.`
+    );
+  };
+
+  // Apply bulk changes from modal
+  const handleApplyBulkChanges = (changes: BulkEditChanges) => {
+    if (selectedProductIds.length === 0) return;
+
+    const targetSet = new Set(selectedProductIds);
+
+    setProducts((prev) =>
+      prev.map((p) => {
+        if (!targetSet.has(p.id)) return p;
+
+        let newPrice = p.price;
+        let newRegular = p.regularPrice;
+        let newSale = p.salePrice;
+        let newStock = p.stockQuantity;
+        let newStatus = p.stockStatus;
+        let newCategory = p.category;
+
+        if (changes.updatePrice && changes.priceValue !== undefined) {
+          if (changes.priceMode === 'fixed') {
+            newPrice = changes.priceValue;
+            newRegular = changes.priceValue;
+          } else if (changes.priceMode === 'percent_increase') {
+            newPrice = Math.round(p.price * (1 + changes.priceValue / 100) * 100) / 100;
+            newRegular = Math.round(p.regularPrice * (1 + changes.priceValue / 100) * 100) / 100;
+          } else if (changes.priceMode === 'percent_decrease') {
+            newPrice = Math.max(0, Math.round(p.price * (1 - changes.priceValue / 100) * 100) / 100);
+            newRegular = Math.max(0, Math.round(p.regularPrice * (1 - changes.priceValue / 100) * 100) / 100);
+          }
+        }
+
+        if (changes.updateSalePrice) {
+          if (changes.salePriceValue === null) {
+            newSale = undefined;
+          } else if (changes.salePriceValue !== undefined) {
+            newSale = changes.salePriceValue;
+          }
+        }
+
+        if (changes.updateStock && changes.stockQuantity !== undefined) {
+          newStock = changes.stockQuantity;
+          newStatus = newStock > 0 ? 'instock' : 'outofstock';
+        }
+
+        if (changes.updateStatus && changes.stockStatus) {
+          newStatus = changes.stockStatus;
+          if (newStatus === 'outofstock') {
+            newStock = 0;
+          } else if (newStatus === 'instock' && newStock === 0) {
+            newStock = 10;
+          }
+        }
+
+        if (changes.updateCategory && changes.category) {
+          newCategory = changes.category;
+        }
+
+        return {
+          ...p,
+          price: newPrice,
+          regularPrice: newRegular,
+          salePrice: newSale,
+          stockQuantity: newStock,
+          stockStatus: newStatus,
+          category: newCategory,
+          isModifiedLocally: true,
+          lastModified: new Date().toISOString(),
+        };
+      })
+    );
+
+    addToast(
+      'success',
+      'Edición en Masa Aplicada',
+      `Se actualizaron ${selectedProductIds.length} productos con éxito.`
+    );
+
+    if (config.realtimeSync) {
+      if (realtimeDebounceTimer.current) {
+        clearTimeout(realtimeDebounceTimer.current);
+      }
+      realtimeDebounceTimer.current = setTimeout(async () => {
+        const currentVendorItems = products.filter((p) => p.vendorId === currentVendor.id);
+        const result = await dispatchProductsWebhook(currentVendor, currentVendorItems, config, 'realtime_change');
+        setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
+      }, 500);
+    }
+  };
+
+  // Quick inline price update for all selected products
+  const handleQuickPriceApply = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = parseFloat(quickPriceInput);
+    if (isNaN(parsed) || parsed < 0) {
+      addToast('error', 'Precio Inválido', 'Por favor ingresa un precio numérico válido.');
+      return;
+    }
+
+    handleApplyBulkChanges({
+      updatePrice: true,
+      priceMode: 'fixed',
+      priceValue: parsed,
+      updateSalePrice: false,
+      updateStock: false,
+      updateStatus: false,
+      updateCategory: false,
+    });
+    setQuickPriceInput('');
+  };
 
   // Debounced realtime webhook trigger
   const realtimeDebounceTimer = useRef<any>(null);
@@ -582,8 +739,6 @@ export default function App() {
           <VendorBar
             vendor={currentVendor}
             products={vendorProducts}
-            onOpenVendorLogin={() => setIsLoginOpen(true)}
-            onLogout={handleLogout}
           />
 
           {/* 3. Product Filter & Search Bar */}
@@ -608,12 +763,77 @@ export default function App() {
 
           {/* 4. Products List Canvas */}
           <main className="max-w-[2400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 w-full flex-1">
-            {/* Results bar */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-3">
-              <div className="text-xs text-[#64748B]">
-                Mostrando <strong className="text-[#0F172A]">{displayProducts.length}</strong> de{' '}
-                <strong className="text-[#0F172A]">{vendorProducts.length}</strong> productos de{' '}
-                <strong className="text-[#EA580C]">{currentVendor.storeName}</strong>
+            {/* Selection & Results bar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 mb-3.5">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                {/* Master Select All Checkbox */}
+                <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-[#0F172A] bg-white border border-[#CBD5E1] hover:border-[#FF5A00] px-3 py-1.5 rounded-lg transition-all shadow-2xs">
+                  <input
+                    type="checkbox"
+                    checked={selectedProductIds.length > 0 && selectedProductIds.length === displayProducts.length}
+                    onChange={handleSelectAllFiltered}
+                    className="w-4 h-4 rounded text-[#FF5A00] focus:ring-[#FF5A00] border-[#CBD5E1] cursor-pointer"
+                  />
+                  <span>
+                    {selectedProductIds.length === 0
+                      ? `Seleccionar todos (${displayProducts.length})`
+                      : `${selectedProductIds.length} seleccionados de ${displayProducts.length}`}
+                  </span>
+                </label>
+
+                {/* Bulk Actions when products are selected */}
+                {selectedProductIds.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      onClick={() => setIsBulkEditOpen(true)}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer active:scale-95"
+                      title="Abrir panel completo de edición en masa"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>Edición en Masa ({selectedProductIds.length})</span>
+                    </button>
+
+                    {/* Quick inline price setter */}
+                    <form
+                      onSubmit={handleQuickPriceApply}
+                      className="flex items-center gap-1.5 bg-[#FFF7ED] border border-[#FED7AA] rounded-lg px-2.5 py-1 shadow-2xs"
+                    >
+                      <span className="text-[11px] font-bold text-[#C2410C] hidden sm:inline">Precio a todos:</span>
+                      <span className="text-xs font-bold text-[#0F172A]">{config.currencySymbol}</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        placeholder="0.00"
+                        value={quickPriceInput}
+                        onChange={(e) => setQuickPriceInput(e.target.value)}
+                        className="w-16 sm:w-20 text-xs font-bold text-[#0F172A] px-1.5 py-0.5 bg-white border border-[#CBD5E1] rounded focus:outline-none focus:border-[#FF5A00] tabular-nums"
+                      />
+                      <button
+                        type="submit"
+                        className="px-2 py-0.5 bg-[#FF5A00] hover:bg-[#E64C00] text-white text-[11px] font-bold rounded cursor-pointer shadow-xs"
+                        title="Aplicar este precio inmediatamente a los productos seleccionados"
+                      >
+                        Fijar
+                      </button>
+                    </form>
+
+                    <button
+                      onClick={handleClearSelection}
+                      className="flex items-center gap-1 px-2 py-1 text-xs text-[#64748B] hover:text-[#0F172A] hover:bg-white rounded-lg transition-colors cursor-pointer border border-transparent hover:border-[#CBD5E1]"
+                      title="Deseleccionar productos"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>Limpiar</span>
+                    </button>
+                  </div>
+                )}
+
+                <div className="text-xs text-[#64748B] hidden xl:inline">
+                  Mostrando <strong className="text-[#0F172A]">{displayProducts.length}</strong> de{' '}
+                  <strong className="text-[#0F172A]">{vendorProducts.length}</strong> productos de{' '}
+                  <strong className="text-[#EA580C]">{currentVendor.storeName}</strong>
+                </div>
               </div>
 
               <div className="flex items-center gap-2 flex-wrap">
@@ -639,7 +859,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Product Cards Grid / Dense List */}
+            {/* Product Cards Grid */}
             {displayProducts.length > 0 ? (
               <div className="grid grid-cols-1 xl:grid-cols-2 3xl:grid-cols-3 gap-3">
                 {displayProducts.map((product) => (
@@ -647,6 +867,9 @@ export default function App() {
                     key={product.id}
                     product={product}
                     config={config}
+                    isSelected={selectedProductIds.includes(product.id)}
+                    onToggleSelect={handleToggleSelectProduct}
+                    onSelectSamePrice={handleSelectSamePrice}
                     onUpdateProduct={handleUpdateProduct}
                     onOpenQuickEdit={(p) => setQuickEditProduct(p)}
                     onShareProduct={(p) => setSharingProduct(p)}
@@ -786,7 +1009,48 @@ export default function App() {
         config={config}
         onSaveConfig={handleSaveConfig}
         onResetCatalog={handleResetCatalog}
+        onLogout={handleLogout}
+        onOpenVendorLogin={() => setIsLoginOpen(true)}
       />
+
+      <BulkEditModal
+        isOpen={isBulkEditOpen}
+        onClose={() => setIsBulkEditOpen(false)}
+        selectedProducts={selectedProducts}
+        categories={vendorCategories}
+        config={config}
+        onApplyBulkChanges={handleApplyBulkChanges}
+      />
+
+      {/* Floating Bulk Action Bar when products are selected */}
+      {isAuthenticated && selectedProductIds.length > 0 && (
+        <div className="fixed bottom-16 sm:bottom-6 left-1/2 -translate-x-1/2 z-40 bg-[#0B0E14] text-white border-2 border-[#FF5A00] shadow-2xl rounded-2xl px-4 py-2.5 flex items-center gap-3 max-w-[95vw] ring-4 ring-[#FF5A00]/20 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-[#10B981] animate-ping"></span>
+            <span className="text-xs sm:text-sm font-black text-white whitespace-nowrap">
+              {selectedProductIds.length} {selectedProductIds.length === 1 ? 'seleccionado' : 'seleccionados'}
+            </span>
+          </div>
+
+          <div className="h-4 w-px bg-[#273142] hidden sm:block" />
+
+          <button
+            onClick={() => setIsBulkEditOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-extrabold rounded-xl shadow-md transition-all cursor-pointer active:scale-95 whitespace-nowrap"
+          >
+            <Layers className="w-4 h-4" />
+            <span>Editar en Masa</span>
+          </button>
+
+          <button
+            onClick={handleClearSelection}
+            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            title="Deseleccionar todos"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* 7. Toast Alerts */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />

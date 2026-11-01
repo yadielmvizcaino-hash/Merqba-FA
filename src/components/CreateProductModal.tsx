@@ -34,9 +34,11 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
   const [imageUrl, setImageUrl] = useState('');
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // File upload handler
+  // File upload handler - Uploads directly to WordPress Media Database
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -45,8 +47,15 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
         if (event.target?.result) {
           const base64 = event.target.result as string;
           setImageUrl(base64); // temporary preview
+          setIsUploadingImage(true);
+          setUploadSuccessMsg(null);
           try {
-            setIsSubmitting(true);
+            let creds: { username?: string; password?: string } = {};
+            try {
+              const raw = sessionStorage.getItem('merqba_auth_user');
+              if (raw) creds = JSON.parse(raw);
+            } catch (e) {}
+
             const res = await fetch('/api/woocommerce/upload-image', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -54,16 +63,19 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                 filename: file.name,
                 fileData: base64,
                 mimeType: file.type || 'image/jpeg',
+                username: creds.username,
+                password: creds.password,
               }),
             });
             const data = await res.json();
             if (data.success && data.url) {
               setImageUrl(data.url);
+              setUploadSuccessMsg('Guardada en base de datos de WordPress');
             }
           } catch (err) {
             console.warn('Image upload fallback notice:', err);
           } finally {
-            setIsSubmitting(false);
+            setIsUploadingImage(false);
           }
         }
       };
@@ -358,6 +370,12 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                 ) : (
                   <ImageIcon className="w-6 h-6 text-[#94A3B8]" />
                 )}
+                {isUploadingImage && (
+                  <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white p-1 text-center">
+                    <Loader2 className="w-4 h-4 text-[#FF5A00] animate-spin mb-0.5" />
+                    <span className="text-[8px] font-bold text-[#FFB380] leading-none">Subiendo...</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1 space-y-2">
@@ -366,7 +384,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                   placeholder="https://ejemplo.com/foto-producto.jpg"
                   value={imageUrl.startsWith('data:') ? '' : imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isUploadingImage}
                   className="w-full px-3 py-1.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-xs text-[#0F172A] focus:outline-none focus:border-[#FF5A00]"
                 />
 
@@ -418,12 +436,28 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isUploadingImage}
                     className="py-1 px-2.5 border border-[#CBD5E1] hover:border-[#FF5A00] bg-[#F8FAFC] hover:bg-white text-[11px] font-medium text-[#475569] rounded-md transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
                   >
-                    <Upload className="w-3 h-3 text-[#FF5A00]" />
-                    <span>Cargar desde dispositivo (vista previa)</span>
+                    {isUploadingImage ? (
+                      <>
+                        <Loader2 className="w-3 h-3 text-[#FF5A00] animate-spin" />
+                        <span>Subiendo a WordPress...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-3 h-3 text-[#FF5A00]" />
+                        <span>Cargar desde galería (WordPress)</span>
+                      </>
+                    )}
                   </button>
+
+                  {uploadSuccessMsg && (
+                    <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      <span>{uploadSuccessMsg}</span>
+                    </span>
+                  )}
                 </div>
               </div>
             </div>

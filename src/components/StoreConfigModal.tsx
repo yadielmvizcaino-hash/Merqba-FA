@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Settings, Check, ShieldCheck, Link2 } from 'lucide-react';
+import { X, Settings, Check, ShieldCheck, Link2, LogOut } from 'lucide-react';
 import { StoreConfig } from '../types';
 
 interface StoreConfigModalProps {
@@ -8,6 +8,8 @@ interface StoreConfigModalProps {
   config: StoreConfig;
   onSaveConfig: (updated: StoreConfig) => void;
   onResetCatalog: () => void;
+  onLogout: () => void;
+  onOpenVendorLogin: () => void;
 }
 
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
@@ -15,6 +17,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   onClose,
   config,
   onSaveConfig,
+  onLogout,
+  onOpenVendorLogin,
 }) => {
   if (!isOpen) return null;
 
@@ -39,9 +43,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
               <Settings className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white">Conexión Merqba FA</h2>
+              <h2 className="text-base font-bold text-white">Configuración y Cuenta</h2>
               <p className="text-[11px] text-[#FFA000]">
-                Estado de la tienda y Webhook
+                Estado de la tienda, Webhook y Sesión
               </p>
             </div>
           </div>
@@ -94,6 +98,37 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             <p className="text-[11px] text-[#64748B] mt-1">
               Receptor al que se disparan las actualizaciones de stock y precios al pulsar &apos;Aplicar Cambios&apos;.
             </p>
+          </div>
+
+          {/* Account Management & Disconnect / Logout buttons moved here */}
+          <div className="pt-3 border-t border-[#E2E8F0] space-y-2">
+            <span className="block text-xs font-bold text-[#0F172A] uppercase tracking-wider">
+              Gestión de Sesión y Cuenta
+            </span>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenVendorLogin();
+                }}
+                className="py-2.5 px-3 bg-[#FFF7ED] hover:bg-[#FFEDD5] border border-[#FED7AA] text-[#C2410C] text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-center"
+              >
+                <span>Desconectar / Cambiar Tienda</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onLogout();
+                }}
+                className="py-2.5 px-3 bg-red-50 hover:bg-red-100 border border-red-200 text-red-700 text-xs font-bold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 text-center"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Salir de la cuenta</span>
+              </button>
+            </div>
           </div>
 
           {/* Buttons */}

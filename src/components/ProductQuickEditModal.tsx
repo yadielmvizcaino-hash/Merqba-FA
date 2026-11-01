@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon, Trash2, ExternalLink } from 'lucide-react';
+import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon, Trash2, ExternalLink, Loader2 } from 'lucide-react';
 import { Product, StoreConfig } from '../types';
 
 interface ProductQuickEditModalProps {
@@ -47,14 +47,49 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   const [sku, setSku] = useState(product.sku);
   const [category, setCategory] = useState(product.category);
 
-  // Gallery file handler
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string | null>(null);
+
+  // Gallery file handler - Uploads directly to WordPress Media Database
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         if (event.target?.result) {
-          setImageUrl(event.target.result as string);
+          const base64 = event.target.result as string;
+          setImageUrl(base64); // Instant preview
+          setIsUploadingImage(true);
+          setUploadSuccessMsg(null);
+          try {
+            let creds: { username?: string; password?: string } = {};
+            try {
+              const raw = sessionStorage.getItem('merqba_auth_user');
+              if (raw) creds = JSON.parse(raw);
+            } catch (e) {}
+
+            const res = await fetch('/api/woocommerce/upload-image', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                filename: file.name,
+                fileData: base64,
+                mimeType: file.type || 'image/jpeg',
+                productId: product.id,
+                username: creds.username,
+                password: creds.password,
+              }),
+            });
+            const data = await res.json();
+            if (data.success && data.url) {
+              setImageUrl(data.url);
+              setUploadSuccessMsg('Guardada en base de datos de WordPress');
+            }
+          } catch (err) {
+            console.warn('Error subiendo imagen a WordPress:', err);
+          } finally {
+            setIsUploadingImage(false);
+          }
         }
       };
       reader.readAsDataURL(file);
@@ -139,6 +174,12 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
             <div className="flex items-center gap-4">
               <div className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-[#CBD5E1] bg-[#F1F5F9] shrink-0">
                 <img src={imageUrl} alt="Vista previa" className="w-full h-full object-cover" />
+                {isUploadingImage && (
+                  <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-white p-1 text-center">
+                    <Loader2 className="w-5 h-5 text-[#FF5A00] animate-spin mb-1" />
+                    <span className="text-[9px] font-bold text-[#FFB380] leading-tight">Subiendo...</span>
+                  </div>
+                )}
               </div>
 
               <div className="flex-1">
@@ -152,14 +193,31 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2 px-3 border border-[#CBD5E1] hover:border-[#FF5A00] bg-[#F8FAFC] hover:bg-white text-xs font-semibold text-[#0F172A] rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs"
+                  disabled={isUploadingImage}
+                  className="w-full py-2 px-3 border border-[#CBD5E1] hover:border-[#FF5A00] bg-[#F8FAFC] hover:bg-white text-xs font-semibold text-[#0F172A] rounded-lg transition-all flex items-center justify-center gap-2 cursor-pointer shadow-xs disabled:opacity-50"
                 >
-                  <Upload className="w-4 h-4 text-[#FF5A00]" />
-                  <span>Subir imagen desde galería</span>
+                  {isUploadingImage ? (
+                    <>
+                      <Loader2 className="w-4 h-4 text-[#FF5A00] animate-spin" />
+                      <span>Subiendo a WordPress...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="w-4 h-4 text-[#FF5A00]" />
+                      <span>Subir imagen desde galería</span>
+                    </>
+                  )}
                 </button>
-                <p className="text-[11px] text-[#64748B] mt-1">
-                  Formatos aceptados: JPG, PNG, WEBP.
-                </p>
+                {uploadSuccessMsg ? (
+                  <p className="text-[11px] text-emerald-600 font-semibold mt-1 flex items-center gap-1">
+                    <Check className="w-3 h-3" />
+                    <span>{uploadSuccessMsg}</span>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[#64748B] mt-1">
+                    Formatos aceptados: JPG, PNG, WEBP.
+                  </p>
+                )}
               </div>
             </div>
           </div>
