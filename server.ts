@@ -35,6 +35,8 @@ interface ActiveSession {
   vendorId?: number;
 }
 let activeSessionUser: ActiveSession | null = null;
+let productsCache: { timestamp: number; data: any } | null = null;
+const PRODUCTS_CACHE_TTL = 45000; // 45 seconds to prevent Traefik/WordPress overload
 
 const escapeXml = (unsafe: string): string => {
   return unsafe.replace(/[<>&'"]/g, (c) => {
@@ -313,7 +315,12 @@ app.post('/api/woocommerce/login', async (req, res) => {
 // 2. Fetch Products directly from live WooCommerce REST API with full pagination support
 app.get('/api/woocommerce/products', async (req, res) => {
   const vendorIdParam = req.query.vendor_id ? parseInt(req.query.vendor_id as string, 10) : null;
-  
+
+  // Return from in-memory cache if fresh (< 45s) to avoid Traefik / WordPress request overload
+  if (productsCache && (Date.now() - productsCache.timestamp < PRODUCTS_CACHE_TTL)) {
+    return res.json(productsCache.data);
+  }
+
   let rawData: any[] = [];
   let lastResponseStatus = 200;
   let successFetch = false;
@@ -465,13 +472,15 @@ app.get('/api/woocommerce/products', async (req, res) => {
         };
       });
 
-      return res.json({
+      const payload = {
         success: true,
         source: 'live_woocommerce',
         count: mapped.length,
         products: mapped,
         vendors: Object.values(vendorsMap),
-      });
+      };
+      productsCache = { timestamp: Date.now(), data: payload };
+      return res.json(payload);
     }
 
     return res.json({ success: false, products: [], source: 'empty_response' });
@@ -601,6 +610,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
         isNew: false,
       };
 
+      productsCache = null;
       return res.json({
         success: true,
         product: mappedProduct,
@@ -791,6 +801,7 @@ app.post('/api/woocommerce/upload-image', async (req, res) => {
       }
     }
 
+    productsCache = null;
     return res.json({
       success: true,
       url: uploadedMediaUrl,
@@ -871,6 +882,7 @@ app.post('/api/woocommerce/batch', async (req, res) => {
 
     if (response.ok) {
       const data = await response.json();
+      productsCache = null;
       return res.json({
         success: true,
         statusCode: response.status,
@@ -919,6 +931,7 @@ app.delete('/api/woocommerce/products/:id', async (req, res) => {
 
     clearTimeout(timeout);
 
+    productsCache = null;
     return res.json({
       success: true,
       statusCode: response.status,
