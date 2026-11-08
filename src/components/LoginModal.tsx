@@ -34,8 +34,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   onAddCustomVendor,
   onShowToast,
 }) => {
-  if (!isOpen) return null;
-
   const [authUsername, setAuthUsername] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -113,6 +111,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       setIsLoggingIn(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div

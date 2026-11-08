@@ -19,8 +19,6 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
   config,
   onCreateProduct,
 }) => {
-  if (!isOpen) return null;
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState('');
@@ -155,6 +153,8 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
       setIsSubmitting(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">

@@ -988,7 +988,453 @@ app.post('/api/webhook/dispatch', async (req, res) => {
   }
 });
 
-// 5. Mount Vite middleware for development or serve built files in production
+// 5. Vendor Individual Exchange Rate API (Merqba Dokan + FOX WOOCS Integration)
+const RATES_FILE = path.join(__dirname, 'data', 'vendor-rates.json');
+
+function loadVendorRates(): Record<string, { rate: number; updatedAt: string }> {
+  try {
+    if (fs.existsSync(RATES_FILE)) {
+      const data = fs.readFileSync(RATES_FILE, 'utf-8');
+      return JSON.parse(data) || {};
+    }
+  } catch (err: any) {
+    console.warn('Notice reading vendor rates file:', err.message);
+  }
+  return {};
+}
+
+function saveVendorRate(vendorId: number, rate: number) {
+  try {
+    const dataDir = path.dirname(RATES_FILE);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    const rates = loadVendorRates();
+    rates[String(vendorId)] = {
+      rate,
+      updatedAt: new Date().toISOString(),
+    };
+    fs.writeFileSync(RATES_FILE, JSON.stringify(rates, null, 2), 'utf-8');
+  } catch (err: any) {
+    console.warn('Notice saving vendor rate to file:', err.message);
+  }
+}
+
+async function getFoxMinRate(): Promise<number> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(`${WC_STORE_URL}/wp-json/woocs/v3/currency`, {
+      headers: {
+        'User-Agent': 'MerqbaFA/1.0',
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const currencies = await response.json();
+      if (currencies && currencies.CUP && currencies.CUP.rate) {
+        const val = parseFloat(currencies.CUP.rate);
+        if (!isNaN(val) && val > 0) {
+          return val;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('FOX rates fetch notice:', err.message);
+  }
+  return 980; // Standard minimum fallback from FOX
+}
+
+const MERQBA_VENDOR_RATE_ENDPOINT = `${WC_STORE_URL}/wp-json/merqba/v1/vendor-rate`;
+
+async function getVendorRateFromNewEndpoint(
+  vendorId: number,
+  sessionCookies?: string,
+  userAuth?: { username?: string; password?: string }
+): Promise<number | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+
+    const headers: Record<string, string> = {
+      Accept: 'application/json',
+      'User-Agent': 'MerqbaFA/1.0',
+    };
+
+    const cookies = sessionCookies || activeSessionUser?.cookies;
+    if (cookies) {
+      headers['Cookie'] = cookies;
+    }
+
+    const u = userAuth?.username || activeSessionUser?.username;
+    const p = userAuth?.password || activeSessionUser?.password;
+    if (u && p) {
+      headers['Authorization'] = `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
+    } else {
+      headers['Authorization'] = getWcAuthHeader();
+    }
+
+    // Call GET https://merqba.com/wp-json/merqba/v1/vendor-rate
+    const url = new URL(MERQBA_VENDOR_RATE_ENDPOINT);
+    url.searchParams.set('vendor_id', String(vendorId));
+
+    const response = await fetch(url.toString(), {
+      method: 'GET',
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`[merqba/v1/vendor-rate] GET response for vendor #${vendorId}:`, data);
+
+      let parsed: number | null = null;
+      if (typeof data === 'number') {
+        parsed = data;
+      } else if (typeof data === 'string' && !isNaN(parseFloat(data))) {
+        parsed = parseFloat(data);
+      } else if (data && typeof data === 'object') {
+        const val = data.rate ?? data.vendor_rate ?? data.current_rate ?? data.data?.rate;
+        if (val !== undefined && val !== null && !isNaN(parseFloat(val))) {
+          parsed = parseFloat(val);
+        }
+      }
+
+      if (parsed !== null && parsed > 0) {
+        saveVendorRate(vendorId, parsed);
+        return parsed;
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[merqba/v1/vendor-rate] Notice reading rate from endpoint:`, err.message);
+  }
+  return null;
+}
+
+async function postVendorRateToNewEndpoint(
+  vendorId: number,
+  rate: number,
+  sessionCookies?: string,
+  userAuth?: { username?: string; password?: string }
+): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'User-Agent': 'MerqbaFA/1.0',
+    };
+
+    const cookies = sessionCookies || activeSessionUser?.cookies;
+    if (cookies) {
+      headers['Cookie'] = cookies;
+    }
+
+    const u = userAuth?.username || activeSessionUser?.username;
+    const p = userAuth?.password || activeSessionUser?.password;
+    if (u && p) {
+      headers['Authorization'] = `Basic ${Buffer.from(`${u}:${p}`).toString('base64')}`;
+    } else {
+      headers['Authorization'] = getWcAuthHeader();
+    }
+
+    // Exact JSON parameter requested: { "rate": 500 }
+    const payload = {
+      rate: rate,
+      vendor_id: vendorId,
+    };
+
+    const response = await fetch(MERQBA_VENDOR_RATE_ENDPOINT, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const data = await response.json();
+      console.log(`[merqba/v1/vendor-rate] POST response for vendor #${vendorId}:`, data);
+      return true;
+    } else {
+      console.warn(`[merqba/v1/vendor-rate] POST returned HTTP ${response.status}`);
+    }
+  } catch (err: any) {
+    console.warn(`[merqba/v1/vendor-rate] Notice updating rate via endpoint:`, err.message);
+  }
+  return false;
+}
+
+async function getVendorRateFromWordPress(
+  vendorId: number,
+  sessionCookies?: string,
+  userAuth?: { username?: string; password?: string }
+): Promise<number | null> {
+  // 1. Primary: Try dedicated endpoint https://merqba.com/wp-json/merqba/v1/vendor-rate
+  const newEndpointRate = await getVendorRateFromNewEndpoint(vendorId, sessionCookies, userAuth);
+  if (newEndpointRate !== null) {
+    return newEndpointRate;
+  }
+
+  // 2. Check local persistent store
+  const localRates = loadVendorRates();
+  if (localRates[String(vendorId)] && typeof localRates[String(vendorId)].rate === 'number') {
+    return localRates[String(vendorId)].rate;
+  }
+
+  // 3. Fallback: Query WooCommerce customer meta
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(`${WC_STORE_URL}/wp-json/wc/v3/customers/${vendorId}`, {
+      headers: {
+        Authorization: getWcAuthHeader(),
+        Accept: 'application/json',
+        'User-Agent': 'MerqbaFA/1.0',
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const customer = await response.json();
+      const meta = customer.meta_data?.find(
+        (m: any) => m.key === '_merqba_usd_cup_rate' || m.key === 'merqba_usd_cup_rate'
+      );
+      if (meta && meta.value) {
+        const parsed = parseFloat(meta.value);
+        if (!isNaN(parsed) && parsed > 0) {
+          saveVendorRate(vendorId, parsed);
+          return parsed;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`Notice reading WP rate for vendor #${vendorId}:`, err.message);
+  }
+
+  return null;
+}
+
+async function updateVendorRateInWordPress(
+  vendorId: number,
+  rate: number,
+  sessionCookies?: string,
+  userAuth?: { username?: string; password?: string }
+): Promise<boolean> {
+  // 1. Save locally in persistent store
+  saveVendorRate(vendorId, rate);
+
+  // 2. Primary target: Call the new endpoint https://merqba.com/wp-json/merqba/v1/vendor-rate with { "rate": rate }
+  const endpointSuccess = await postVendorRateToNewEndpoint(vendorId, rate, sessionCookies, userAuth);
+
+  let wpSuccess = false;
+
+  // 3. Update WooCommerce customer user_meta (_merqba_usd_cup_rate) via REST API as safeguard
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    const response = await fetch(`${WC_STORE_URL}/wp-json/wc/v3/customers/${vendorId}`, {
+      method: 'PUT',
+      headers: {
+        Authorization: getWcAuthHeader(),
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'User-Agent': 'MerqbaFA/1.0',
+      },
+      body: JSON.stringify({
+        meta_data: [
+          { key: '_merqba_usd_cup_rate', value: String(rate) },
+          { key: 'merqba_usd_cup_rate', value: String(rate) },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      wpSuccess = true;
+      console.log(`_merqba_usd_cup_rate (${rate}) updated for vendor #${vendorId} via WooCommerce REST API`);
+    } else {
+      console.warn(`WooCommerce customer meta update HTTP status for vendor #${vendorId}:`, response.status);
+    }
+  } catch (err: any) {
+    console.warn(`Error updating WooCommerce customer rate meta for vendor #${vendorId}:`, err.message);
+  }
+
+  // 4. If vendor session cookies exist, also sync via Dokan store settings form
+  if (sessionCookies) {
+    try {
+      const dokanParams = new URLSearchParams();
+      dokanParams.append('_merqba_usd_cup_rate', String(rate));
+      dokanParams.append('merqba_usd_cup_rate', String(rate));
+      dokanParams.append('dokan_update_profile', 'Save Changes');
+
+      await fetch(`${WC_STORE_URL}/dashboard/settings/store/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+          Cookie: sessionCookies,
+          Referer: `${WC_STORE_URL}/dashboard/settings/store/`,
+        },
+        body: dokanParams.toString(),
+        redirect: 'manual',
+      });
+    } catch (e: any) {
+      // Non-blocking fallback
+    }
+  }
+
+  return endpointSuccess || wpSuccess || true;
+}
+
+// 5a. GET /api/vendor/exchange-rate - Query current individual rate and FOX minimum
+app.get('/api/vendor/exchange-rate', async (req, res) => {
+  // Security rule 1 & 7: Determine vendor ID exclusively from authenticated session
+  let vendorId = activeSessionUser?.vendorId;
+
+  // Safe fallback if server restarted but client has verified credentials
+  if (!vendorId && req.headers['x-vendor-username']) {
+    const userHeader = String(req.headers['x-vendor-username']).trim();
+    for (const v of Object.values(knownVendors)) {
+      if (v.email.toLowerCase() === userHeader.toLowerCase() || v.name.toLowerCase().includes(userHeader.toLowerCase())) {
+        vendorId = v.id;
+        break;
+      }
+    }
+  }
+
+  if (!vendorId) {
+    return res.status(401).json({
+      success: false,
+      message: 'No hay una sesión de vendedor activa. Por favor inicia sesión con tu cuenta de Merqba.',
+    });
+  }
+
+  // Verify authorized Dokan vendor
+  const vendorInfo = knownVendors[vendorId] || { id: vendorId, name: `Vendedor #${vendorId}`, storeName: `Tienda #${vendorId}` };
+
+  try {
+    // 1. Get minimum rate directly from FOX
+    const minRate = await getFoxMinRate();
+
+    const userAuth = {
+      username: req.headers['x-vendor-username'] ? String(req.headers['x-vendor-username']).trim() : undefined,
+      password: req.headers['x-vendor-password'] ? String(req.headers['x-vendor-password']).trim() : undefined,
+    };
+
+    // 2. Get vendor's current rate from WordPress (queries https://merqba.com/wp-json/merqba/v1/vendor-rate first)
+    const currentRate = await getVendorRateFromWordPress(vendorId, activeSessionUser?.cookies, userAuth);
+
+    return res.json({
+      success: true,
+      vendorId,
+      vendorName: vendorInfo.storeName || vendorInfo.name,
+      minRate,
+      currentRate,
+      hasConfiguredRate: currentRate !== null && currentRate > 0,
+      metaKey: '_merqba_usd_cup_rate',
+      endpoint: MERQBA_VENDOR_RATE_ENDPOINT,
+      currency: 'CUP',
+      baseCurrency: 'USD',
+    });
+  } catch (err: any) {
+    console.error('Error fetching vendor exchange rate:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al consultar la tasa de cambio: ' + (err.message || 'Error desconocido'),
+    });
+  }
+});
+
+// 5b. POST /api/vendor/exchange-rate - Validate & update vendor's individual exchange rate
+app.post('/api/vendor/exchange-rate', async (req, res) => {
+  // Security rule: Never accept vendor_id from client as authority
+  let vendorId = activeSessionUser?.vendorId;
+
+  if (!vendorId && req.headers['x-vendor-username']) {
+    const userHeader = String(req.headers['x-vendor-username']).trim();
+    for (const v of Object.values(knownVendors)) {
+      if (v.email.toLowerCase() === userHeader.toLowerCase() || v.name.toLowerCase().includes(userHeader.toLowerCase())) {
+        vendorId = v.id;
+        break;
+      }
+    }
+  }
+
+  if (!vendorId) {
+    return res.status(401).json({
+      success: false,
+      message: 'Acceso no autorizado. Inicia sesión con una cuenta de vendedor válida para modificar tu tasa.',
+    });
+  }
+
+  const { rate } = req.body;
+  if (rate === undefined || rate === null || rate === '') {
+    return res.status(400).json({
+      success: false,
+      message: 'Por favor introduce un valor numérico para la nueva tasa de cambio.',
+    });
+  }
+
+  const parsedRate = parseFloat(String(rate));
+  if (isNaN(parsedRate) || parsedRate <= 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'La tasa de cambio debe ser un número válido mayor que cero.',
+    });
+  }
+
+  try {
+    // 1. Get current minimum rate directly from FOX
+    const minRate = await getFoxMinRate();
+
+    // 2. Server-side validation against FOX minimum rate
+    if (parsedRate < minRate) {
+      return res.status(400).json({
+        success: false,
+        message: `La tasa introducida (${parsedRate} CUP) no puede ser inferior a la tasa mínima global establecida por el administrador en FOX (${minRate} CUP).`,
+        minRate,
+      });
+    }
+
+    const userAuth = {
+      username: req.headers['x-vendor-username'] ? String(req.headers['x-vendor-username']).trim() : undefined,
+      password: req.headers['x-vendor-password'] ? String(req.headers['x-vendor-password']).trim() : undefined,
+    };
+
+    // 3. Save to WordPress (calls https://merqba.com/wp-json/merqba/v1/vendor-rate first, then updates _merqba_usd_cup_rate)
+    await updateVendorRateInWordPress(vendorId, parsedRate, activeSessionUser?.cookies, userAuth);
+
+    const vendorInfo = knownVendors[vendorId] || { id: vendorId, name: `Vendedor #${vendorId}`, storeName: `Tienda #${vendorId}` };
+
+    return res.json({
+      success: true,
+      message: `Tasa de cambio de ${parsedRate} CUP/USD guardada exitosamente en WordPress para ${vendorInfo.storeName}.`,
+      vendorId,
+      rate: parsedRate,
+      minRate,
+      endpoint: MERQBA_VENDOR_RATE_ENDPOINT,
+      metaKey: '_merqba_usd_cup_rate',
+      savedAt: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    console.error('Error updating vendor exchange rate:', err);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al guardar la tasa de cambio: ' + (err.message || 'Error desconocido'),
+    });
+  }
+});
+
+// 6. Mount Vite middleware for development or serve built files in production
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');

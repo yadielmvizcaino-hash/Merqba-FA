@@ -38,8 +38,6 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
   isDispatching,
   webhookLogs,
 }) => {
-  if (!isOpen) return null;
-
   const [copied, setCopied] = useState(false);
   const [activeTab, setActiveTab] = useState<'payload' | 'logs' | 'config'>('payload');
   const [tempWebhookUrl, setTempWebhookUrl] = useState(config.webhookUrl);
@@ -66,6 +64,8 @@ export const WebhookModal: React.FC<WebhookModalProps> = ({
       realtimeSync: !config.realtimeSync,
     });
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">

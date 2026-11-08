@@ -1,6 +1,6 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon, Trash2, ExternalLink, Loader2 } from 'lucide-react';
-import { Product, StoreConfig } from '../types';
+import { Product, StoreConfig, StockStatus } from '../types';
 
 interface ProductQuickEditModalProps {
   product: Product | null;
@@ -19,33 +19,31 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   onSave,
   onDelete,
 }) => {
-  if (!isOpen || !product) return null;
-
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const productSlug =
-    product.slug ||
-    product.name
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+  const [name, setName] = useState(product?.name || '');
+  const [price, setPrice] = useState(product?.price ? product.price.toString() : '');
+  const [regularPrice, setRegularPrice] = useState(product?.regularPrice ? product.regularPrice.toString() : '');
+  const [salePrice, setSalePrice] = useState(product?.salePrice ? product.salePrice.toString() : '');
+  const [stockQuantity, setStockQuantity] = useState(product?.stockQuantity !== undefined ? product.stockQuantity.toString() : '0');
+  const [stockStatus, setStockStatus] = useState<StockStatus>(product?.stockStatus || 'instock');
+  const [imageUrl, setImageUrl] = useState(product?.imageUrl || '');
+  const [sku, setSku] = useState(product?.sku || '');
+  const [category, setCategory] = useState(product?.category || '');
 
-  const productUrl =
-    product.permalink && product.permalink.startsWith('http')
-      ? product.permalink.replace(/\/+$/, '')
-      : `${config.storeUrl.replace(/\/+$/, '')}/producto/${productSlug}`;
-
-  const [name, setName] = useState(product.name);
-  const [price, setPrice] = useState(product.price.toString());
-  const [regularPrice, setRegularPrice] = useState(product.regularPrice.toString());
-  const [salePrice, setSalePrice] = useState(product.salePrice ? product.salePrice.toString() : '');
-  const [stockQuantity, setStockQuantity] = useState(product.stockQuantity.toString());
-  const [stockStatus, setStockStatus] = useState(product.stockStatus);
-  const [imageUrl, setImageUrl] = useState(product.imageUrl);
-  const [sku, setSku] = useState(product.sku);
-  const [category, setCategory] = useState(product.category);
+  useEffect(() => {
+    if (product) {
+      setName(product.name);
+      setPrice(product.price.toString());
+      setRegularPrice(product.regularPrice.toString());
+      setSalePrice(product.salePrice ? product.salePrice.toString() : '');
+      setStockQuantity(product.stockQuantity.toString());
+      setStockStatus(product.stockStatus);
+      setImageUrl(product.imageUrl);
+      setSku(product.sku);
+      setCategory(product.category);
+    }
+  }, [product]);
 
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string | null>(null);
@@ -131,6 +129,22 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
     });
     onClose();
   };
+
+  if (!isOpen || !product) return null;
+
+  const productSlug =
+    product.slug ||
+    product.name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+  const productUrl =
+    product.permalink && product.permalink.startsWith('http')
+      ? product.permalink.replace(/\/+$/, '')
+      : `${config.storeUrl.replace(/\/+$/, '')}/producto/${productSlug}`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">

@@ -27,10 +27,10 @@ export const ShareProductModal: React.FC<ShareProductModalProps> = ({
   onClose,
   onShowToast,
 }) => {
-  if (!isOpen || !product) return null;
-
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedText, setCopiedText] = useState(false);
+
+  if (!isOpen || !product) return null;
 
   // Generate realistic clean product URL matching WooCommerce canonical URL without ID prefix
   const rawSlug =

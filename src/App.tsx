@@ -1007,10 +1007,13 @@ export default function App() {
         isOpen={isConfigOpen}
         onClose={() => setIsConfigOpen(false)}
         config={config}
+        currentVendor={currentVendor}
+        isAuthenticated={isAuthenticated}
         onSaveConfig={handleSaveConfig}
         onResetCatalog={handleResetCatalog}
         onLogout={handleLogout}
         onOpenVendorLogin={() => setIsLoginOpen(true)}
+        onShowToast={addToast}
       />
 
       <BulkEditModal

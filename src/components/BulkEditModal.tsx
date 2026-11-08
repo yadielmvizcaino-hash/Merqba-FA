@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Layers, Check, DollarSign, Package, Tag, AlertCircle } from 'lucide-react';
 import { Product, StoreConfig } from '../types';
 
@@ -33,8 +33,6 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   config,
   onApplyBulkChanges,
 }) => {
-  if (!isOpen || selectedProducts.length === 0) return null;
-
   // Form states
   const [updatePrice, setUpdatePrice] = useState(true);
   const [priceMode, setPriceMode] = useState<'fixed' | 'percent_increase' | 'percent_decrease'>('fixed');
@@ -56,6 +54,17 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
   const [selectedCat, setSelectedCat] = useState<string>(selectedProducts[0]?.category || 'General');
   const [newCatInput, setNewCatInput] = useState<string>('');
   const [isCreatingNewCat, setIsCreatingNewCat] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && selectedProducts.length > 0) {
+      if (selectedProducts[0]?.price !== undefined) {
+        setPriceValue(selectedProducts[0].price.toString());
+      }
+      if (selectedProducts[0]?.category) {
+        setSelectedCat(selectedProducts[0].category);
+      }
+    }
+  }, [isOpen, selectedProducts]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,6 +93,8 @@ export const BulkEditModal: React.FC<BulkEditModalProps> = ({
 
   // Calculate unique prices currently among selected items
   const uniquePrices = Array.from(new Set(selectedProducts.map((p) => p.price)));
+
+  if (!isOpen || selectedProducts.length === 0) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
