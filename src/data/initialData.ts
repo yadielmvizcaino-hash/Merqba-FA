@@ -98,8 +98,8 @@ export const INITIAL_PRODUCTS: Product[] = [];
 
 export const DEFAULT_CONFIG: StoreConfig = {
   storeUrl: 'https://merqba.com',
-  consumerKey: 'ck_115fce2ee9779ca57b79bd19811d44be9dd6b9b2',
-  consumerSecret: 'cs_7b5ddadd4a04c6996d04430974564928a58ca12a',
+  consumerKey: '',
+  consumerSecret: '',
   webhookUrl: 'https://merqba.com/wp-json/merqba/v1/sync',
   realtimeSync: false,
   currency: 'USD',

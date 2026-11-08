@@ -55,19 +55,24 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   // Exchange rate state
   const [isLoadingRate, setIsLoadingRate] = useState(false);
   const [isSavingRate, setIsSavingRate] = useState(false);
-  const [minRate, setMinRate] = useState<number>(980);
+  const [minRate, setMinRate] = useState<number | null>(null);
   const [currentRate, setCurrentRate] = useState<number | null>(null);
   const [hasConfiguredRate, setHasConfiguredRate] = useState(false);
   const [inputRate, setInputRate] = useState<string>('');
   const [rateError, setRateError] = useState<string | null>(null);
   const [rateSuccess, setRateSuccess] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<boolean>(false);
 
-  // Helper to extract session credentials from sessionStorage
+  // Helper to extract session token & credentials from sessionStorage
   const getAuthHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     };
+    const sessionToken = sessionStorage.getItem('merqba_session_token');
+    if (sessionToken) {
+      headers['x-session-token'] = sessionToken;
+    }
     try {
       const raw = sessionStorage.getItem('merqba_auth_user');
       if (raw) {
@@ -86,6 +91,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
     setIsLoadingRate(true);
     setRateError(null);
     setRateSuccess(null);
+    setAuthError(false);
 
     try {
       const response = await fetch('/api/vendor/exchange-rate', {
@@ -95,17 +101,25 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        setAuthError(true);
+        setRateError(data.message || 'Error de autenticación. Tu sesión ha expirado o no estás autenticado.');
+        return;
+      }
+
       if (response.ok && data.success) {
-        setMinRate(data.minRate || 980);
+        const fetchedMin = data.minRate !== undefined && data.minRate !== null ? Number(data.minRate) : null;
+        setMinRate(fetchedMin);
         setCurrentRate(data.currentRate);
         setHasConfiguredRate(Boolean(data.hasConfiguredRate));
+
         if (data.currentRate) {
           setInputRate(String(data.currentRate));
-        } else {
-          setInputRate(String(data.minRate || 980));
+        } else if (fetchedMin) {
+          setInputRate(String(fetchedMin));
         }
       } else {
-        setRateError(data.message || 'No se pudo consultar la tasa de cambio.');
+        setRateError(data.message || 'No se pudo consultar la tasa de cambio desde WordPress.');
       }
     } catch (err: any) {
       setRateError('Error de conexión al consultar la tasa de cambio con WordPress.');
@@ -135,6 +149,11 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
       return;
     }
 
+    if (minRate === null) {
+      setRateError('FOX / WordPress no ha devuelto una tasa mínima permitida válida. Reintenta la consulta.');
+      return;
+    }
+
     if (minRate && parsed < minRate) {
       setRateError(
         `La tasa introducida (${parsed} CUP) no puede ser inferior a la tasa mínima global de Merqba en FOX (${minRate} CUP).`
@@ -153,24 +172,33 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
 
       const data = await response.json();
 
+      if (response.status === 401) {
+        setAuthError(true);
+        setRateError('Error de autenticación. Tu sesión ha expirado o no estás autenticado.');
+        return;
+      }
+
       if (response.ok && data.success) {
         setCurrentRate(data.rate);
         setHasConfiguredRate(true);
+        if (data.minRate) {
+          setMinRate(data.minRate);
+        }
         setRateSuccess(
-          `¡Tasa de cambio de ${data.rate} CUP/USD guardada exitosamente en WordPress (_merqba_usd_cup_rate)!`
+          data.message || `¡Tasa de cambio de ${data.rate} CUP/USD guardada exitosamente en WordPress!`
         );
         if (onShowToast) {
           onShowToast(
             'success',
             'Tasa de Cambio Guardada',
-            `Tu tasa individual de ${data.rate} CUP/USD fue actualizada en WordPress.`
+            `Tu tasa individual de ${data.rate} CUP/USD fue actualizada y confirmada por WordPress.`
           );
         }
       } else {
         setRateError(data.message || 'Error al guardar la tasa de cambio en el servidor.');
       }
     } catch (err: any) {
-      setRateError('Error de red al comunicar con el servidor de WooCommerce.');
+      setRateError('Error de red al comunicar con el servidor de WooCommerce/WordPress.');
     } finally {
       setIsSavingRate(false);
     }
@@ -304,9 +332,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                       </div>
                       <div className="flex items-baseline gap-1">
                         <span className="text-2xl font-black text-[#1E3A8A]">
-                          {minRate ? minRate.toFixed(2) : '980.00'}
+                          {minRate !== null ? minRate.toFixed(2) : 'No disponible'}
                         </span>
-                        <span className="text-xs font-bold text-[#3B82F6]">CUP / USD</span>
+                        {minRate !== null && <span className="text-xs font-bold text-[#3B82F6]">CUP / USD</span>}
                       </div>
                       <p className="text-[10px] text-[#1E40AF]/80 leading-tight">
                         Establecida por el administrador. Ningún vendedor puede fijar una tasa inferior a este valor.
@@ -361,10 +389,53 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                       >
                         {hasConfiguredRate && currentRate
                           ? 'Guardada en WordPress en `user_meta: _merqba_usd_cup_rate`.'
-                          : `Tu tienda aplica la tasa estándar (${minRate} CUP) hasta que configures una tasa.`}
+                          : `Tu tienda aplica la tasa estándar (${minRate !== null ? minRate + ' CUP' : 'del administrador'}) hasta que configures una tasa.`}
                       </p>
                     </div>
                   </div>
+
+                  {/* State H Notice: Missing FOX / WP Minimum Rate */}
+                  {minRate === null && !isLoadingRate && !authError && (
+                    <div className="p-3 bg-[#FFFBEB] border border-[#FDE68A] rounded-xl flex items-center justify-between gap-2.5 text-xs text-[#92400E] animate-fade-in">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">FOX / WordPress no ha devuelto una tasa mínima permitida válida.</p>
+                          <p className="text-[11px] text-[#B45309]">No es posible guardar una tasa sin validar el mínimo. Reintenta la consulta.</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={fetchExchangeRate}
+                        className="px-2.5 py-1 bg-[#D97706] hover:bg-[#B45309] text-white font-bold text-[11px] rounded-lg shrink-0 cursor-pointer"
+                      >
+                        Reintentar
+                      </button>
+                    </div>
+                  )}
+
+                  {/* State G Notice: Authentication Error */}
+                  {authError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-2 text-xs text-red-800 animate-fade-in">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">Error de autenticación</p>
+                          <p className="text-[11px] text-red-600">Tu sesión ha expirado o no estás autenticado como vendedor.</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onClose();
+                          onOpenVendorLogin();
+                        }}
+                        className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white font-bold text-[11px] rounded-lg shrink-0 cursor-pointer"
+                      >
+                        Iniciar Sesión
+                      </button>
+                    </div>
+                  )}
 
                   {/* Input Form Section */}
                   <div className="space-y-2 pt-1">
