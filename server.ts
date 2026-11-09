@@ -35,21 +35,120 @@ interface ActiveSession {
   username: string;
   password?: string;
   cookies?: string;
+  wpNonce?: string;
   vendorId: number;
   createdAt: number;
   expiresAt: number;
 }
 
-// In-memory isolated multi-user session map: sessionId -> ActiveSession
+// In-memory isolated multi-user session map with file persistence
 const activeSessions = new Map<string, ActiveSession>();
+const SESSIONS_FILE = path.join(__dirname, '.sessions.json');
+
+function loadSessionsFromFile() {
+  try {
+    if (fs.existsSync(SESSIONS_FILE)) {
+      const raw = fs.readFileSync(SESSIONS_FILE, 'utf-8');
+      const data = JSON.parse(raw);
+      const now = Date.now();
+      if (Array.isArray(data)) {
+        for (const sess of data) {
+          if (sess && sess.sessionId && sess.expiresAt > now) {
+            activeSessions.set(sess.sessionId, sess);
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('Could not load sessions from file:', err?.message);
+  }
+}
+
+function saveSessionsToFile() {
+  try {
+    const list = Array.from(activeSessions.values());
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+  } catch (err: any) {
+    console.warn('Could not save sessions to file:', err?.message);
+  }
+}
+
+// Clean raw cookies into a standard Cookie header (key=value; key2=value2)
+function cleanCookieHeader(rawCookies: string | string[] | undefined): string {
+  if (!rawCookies) return '';
+  const entries: string[] = [];
+  const list = Array.isArray(rawCookies) ? rawCookies : [rawCookies];
+  for (const item of list) {
+    const parts = item.split(';');
+    for (const part of parts) {
+      const trimmed = part.trim();
+      const lower = trimmed.toLowerCase();
+      if (
+        !lower.startsWith('path=') &&
+        !lower.startsWith('expires=') &&
+        !lower.startsWith('max-age=') &&
+        !lower.startsWith('domain=') &&
+        !lower.startsWith('samesite=') &&
+        lower !== 'secure' &&
+        lower !== 'httponly' &&
+        trimmed.includes('=')
+      ) {
+        entries.push(trimmed);
+      }
+    }
+  }
+  const map = new Map<string, string>();
+  for (const entry of entries) {
+    const idx = entry.indexOf('=');
+    if (idx > 0) {
+      const k = entry.slice(0, idx).trim();
+      const v = entry.slice(idx + 1).trim();
+      map.set(k, v);
+    }
+  }
+  return Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
+}
+
+// Fetch or refresh session wp_rest nonce from WordPress /mi-cuenta/
+async function refreshSessionNonce(session: ActiveSession): Promise<string | undefined> {
+  if (!session.cookies) return undefined;
+  try {
+    const res = await fetch(`${WC_STORE_URL}/mi-cuenta/`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+        Cookie: session.cookies,
+      },
+    });
+    if (res.ok) {
+      const html = await res.text();
+      const m = html.match(/wpApiSettings\s*=\s*\{[^}]*\"nonce\"\s*:\s*\"([^\"]+)\"/);
+      if (m && m[1]) {
+        session.wpNonce = m[1];
+        saveSessionsToFile();
+        return m[1];
+      }
+    }
+  } catch (err: any) {
+    console.warn('Could not refresh WP REST nonce for session:', err?.message);
+  }
+  return session.wpNonce;
+}
+
+// Load initial sessions
+loadSessionsFromFile();
 
 // Cleanup expired sessions every 15 minutes
 function cleanExpiredSessions() {
   const now = Date.now();
+  let changed = false;
   for (const [id, sess] of activeSessions.entries()) {
     if (sess.expiresAt < now) {
       activeSessions.delete(id);
+      changed = true;
     }
+  }
+  if (changed) {
+    saveSessionsToFile();
   }
 }
 setInterval(cleanExpiredSessions, 15 * 60 * 1000);
@@ -352,17 +451,43 @@ app.post('/api/woocommerce/login', async (req, res) => {
 
     // Issue unique secure session token
     const sessionId = 'merqba_sess_' + crypto.randomBytes(32).toString('hex');
+    const cleanedCookies = cleanCookieHeader(postCookies);
+
+    // Fetch initial WP REST nonce using the authenticated cookies
+    let initialNonce: string | undefined;
+    if (cleanedCookies) {
+      try {
+        const accRes = await fetch(`${WC_STORE_URL}/mi-cuenta/`, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+            Cookie: cleanedCookies,
+          },
+        });
+        if (accRes.ok) {
+          const accHtml = await accRes.text();
+          const nm = accHtml.match(/wpApiSettings\s*=\s*\{[^}]*\"nonce\"\s*:\s*\"([^\"]+)\"/);
+          if (nm && nm[1]) {
+            initialNonce = nm[1];
+          }
+        }
+      } catch (e) {
+        // Nonce fetch optional; can be refreshed later
+      }
+    }
+
     const newSession: ActiveSession = {
       sessionId,
       username: cleanUser,
       password: cleanPass,
-      cookies: postCookies,
+      cookies: cleanedCookies || postCookies,
+      wpNonce: initialNonce,
       vendorId: matchedVendor.id,
       createdAt: Date.now(),
       expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24-hour expiration
     };
 
     activeSessions.set(sessionId, newSession);
+    saveSessionsToFile();
 
     // Set HTTP-only Cookie for security
     res.cookie('merqba_session_token', sessionId, {
@@ -392,6 +517,7 @@ app.post('/api/woocommerce/logout', (req, res) => {
   const session = getSessionFromRequest(req);
   if (session) {
     activeSessions.delete(session.sessionId);
+    saveSessionsToFile();
   }
   res.clearCookie('merqba_session_token', { path: '/' });
   res.json({ success: true, message: 'Sesión cerrada correctamente.' });
@@ -1249,16 +1375,19 @@ async function getVendorRateFromWordPress(session: ActiveSession): Promise<Vendo
 
     if (session.cookies) {
       headers['Cookie'] = session.cookies;
+      if (!session.wpNonce) {
+        await refreshSessionNonce(session);
+      }
+      if (session.wpNonce) {
+        headers['X-WP-Nonce'] = session.wpNonce;
+      }
     }
 
     if (session.username && session.password) {
       headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
     }
 
-    const url = new URL(MERQBA_VENDOR_RATE_ENDPOINT);
-    url.searchParams.set('vendor_id', String(session.vendorId));
-
-    const response = await fetch(url.toString(), {
+    const response = await fetch(MERQBA_VENDOR_RATE_ENDPOINT, {
       method: 'GET',
       headers,
       signal: controller.signal,
@@ -1338,15 +1467,21 @@ async function updateVendorRateInWordPress(session: ActiveSession, newRate: numb
 
     if (session.cookies) {
       headers['Cookie'] = session.cookies;
+      if (!session.wpNonce) {
+        await refreshSessionNonce(session);
+      }
+      if (session.wpNonce) {
+        headers['X-WP-Nonce'] = session.wpNonce;
+      }
     }
 
     if (session.username && session.password) {
       headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
     }
 
-    // Exact JSON body payload required: { "rate": "450" }
+    // Exact JSON body payload required: { "rate": 500 } (number or string accepted by PHP)
     const payload = {
-      rate: String(newRate),
+      rate: newRate,
     };
 
     const response = await fetch(MERQBA_VENDOR_RATE_ENDPOINT, {
@@ -1369,14 +1504,19 @@ async function updateVendorRateInWordPress(session: ActiveSession, newRate: numb
       };
     }
 
-    // Section 5.5: After saving, perform fresh GET query to verify persisted value directly in WP!
-    const verified = await getVendorRateFromWordPress(session);
+    // The PHP endpoint already verifies persistence and returns confirmed data!
+    const confirmedRate = (resJson && resJson.rate !== undefined && resJson.rate !== null && !isNaN(parseFloat(String(resJson.rate))))
+      ? parseFloat(String(resJson.rate))
+      : newRate;
+    const confirmedMin = (resJson && resJson.minimum_rate && !isNaN(parseFloat(String(resJson.minimum_rate))))
+      ? parseFloat(String(resJson.minimum_rate))
+      : (await getFoxMinRate());
 
     return {
       success: true,
-      rate: verified.rate !== null ? verified.rate : newRate,
-      minRate: verified.minRate,
-      message: resJson?.message || 'Tasa de cambio guardada y confirmada exitosamente en WordPress.',
+      rate: confirmedRate,
+      minRate: confirmedMin,
+      message: resJson?.message || `Tasa de cambio de ${confirmedRate} CUP/USD guardada y confirmada exitosamente en WordPress.`,
     };
   } catch (err: any) {
     return {

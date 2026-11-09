@@ -97,6 +97,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
       const response = await fetch('/api/vendor/exchange-rate', {
         method: 'GET',
         headers: getAuthHeaders(),
+        credentials: 'include',
       });
 
       const data = await response.json();
@@ -156,7 +157,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
 
     if (minRate && parsed < minRate) {
       setRateError(
-        `La tasa introducida (${parsed} CUP) no puede ser inferior a la tasa mínima global de Merqba en FOX (${minRate} CUP).`
+        `La tasa introducida (${parsed} CUP) no puede ser inferior a la tasa mínima global de Merqba en FOX (${minRate} CUP). Por favor ingresa ${minRate} o un valor mayor.`
       );
       return;
     }
@@ -167,6 +168,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
       const response = await fetch('/api/vendor/exchange-rate', {
         method: 'POST',
         headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify({ rate: parsed }),
       });
 
@@ -459,7 +461,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                           setRateError(null);
                           setRateSuccess(null);
                         }}
-                        placeholder={minRate ? String(minRate) : 'Ej: 500'}
+                        placeholder={minRate ? `Mínimo ${minRate} CUP` : 'Ej: 980'}
                         className="w-full pl-20 pr-16 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-sm font-extrabold text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-2 focus:ring-[#FF5A00]/20"
                       />
                       <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-500 font-bold text-xs">
