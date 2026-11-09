@@ -112,6 +112,8 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
     const parsedRegular = parseFloat(regularPrice) || parsedPrice;
     const parsedSale = salePrice ? parseFloat(salePrice) : undefined;
     const parsedQty = parseInt(stockQuantity, 10) || 0;
+    const finalStatus = stockStatus;
+    const finalQty = finalStatus === 'instock' && parsedQty <= 0 ? 10 : (finalStatus === 'outofstock' ? 0 : parsedQty);
 
     onSave({
       ...product,
@@ -119,8 +121,8 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
       price: parsedPrice,
       regularPrice: parsedRegular,
       salePrice: parsedSale,
-      stockQuantity: parsedQty,
-      stockStatus: parsedQty === 0 ? 'outofstock' : stockStatus,
+      stockQuantity: finalQty,
+      stockStatus: finalStatus,
       imageUrl,
       sku: sku.trim() || product.sku,
       category: category.trim() || product.category,

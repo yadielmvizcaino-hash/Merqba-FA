@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Camera,
   Check,
@@ -49,9 +49,16 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const [isEditingStock, setIsEditingStock] = useState(false);
   const [tempStock, setTempStock] = useState(product.stockQuantity.toString());
 
+  // Keep local inputs in sync with product prop updates
+  useEffect(() => {
+    setTempStock(product.stockQuantity.toString());
+    setTempPrice(product.price.toString());
+    setTempTitle(product.name);
+  }, [product.stockQuantity, product.price, product.name]);
+
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
-  const isOutOfStock = product.stockStatus === 'outofstock' || product.stockQuantity === 0;
+  const isOutOfStock = product.stockStatus === 'outofstock';
 
   // Save title edit
   const handleSaveTitle = () => {
@@ -119,7 +126,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   // Interruptor de stock (Toggle Switch 44x26px)
   const handleToggleStockStatus = () => {
-    if (product.stockStatus === 'instock' && product.stockQuantity > 0) {
+    if (product.stockStatus === 'instock') {
       onUpdateProduct({
         ...product,
         stockStatus: 'outofstock',

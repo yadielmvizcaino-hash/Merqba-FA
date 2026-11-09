@@ -406,15 +406,50 @@ export default function App() {
     setQuickPriceInput('');
   };
 
+  // Helper to obtain authenticated session headers
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = sessionStorage.getItem('merqba_session_token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) {
+      headers['x-session-token'] = token;
+    }
+    return headers;
+  };
+
   // Debounced realtime webhook trigger
   const realtimeDebounceTimer = useRef<any>(null);
 
-  const handleUpdateProduct = (updated: Product) => {
+  const handleUpdateProduct = async (updated: Product) => {
+    // 1. Optimistic UI update
     setProducts((prev) =>
       prev.map((item) => (item.id === updated.id ? updated : item))
     );
 
-    // If realtime sync is active, trigger webhook after 600ms debounce
+    // 2. Persist single product stock/status immediately to WooCommerce REST API
+    try {
+      fetch(`/api/woocommerce/products/${updated.id}/stock`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({
+          stockStatus: updated.stockStatus,
+          stockQuantity: updated.stockQuantity,
+        }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.savedToWooCommerce) {
+            setProducts((prev) =>
+              prev.map((item) => (item.id === updated.id ? { ...item, isModifiedLocally: false } : item))
+            );
+          }
+        })
+        .catch((e) => console.warn('Single stock sync notice:', e));
+    } catch (err) {
+      console.warn('Stock update notice:', err);
+    }
+
+    // 3. If realtime sync is active, trigger webhook after 600ms debounce
     if (config.realtimeSync) {
       if (realtimeDebounceTimer.current) {
         clearTimeout(realtimeDebounceTimer.current);
@@ -467,7 +502,10 @@ export default function App() {
   const handleSync = async (silent = false) => {
     setIsSyncing(true);
     try {
-      const res = await fetch(`/api/woocommerce/products?vendor_id=${currentVendorId}`);
+      const res = await fetch(`/api/woocommerce/products?vendor_id=${currentVendorId}&refresh=1`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.products) && data.products.length > 0) {
@@ -535,14 +573,20 @@ export default function App() {
   const handleApplyChanges = async () => {
     if (isDispatchingWebhook) return;
 
+    // Send ONLY modified products to avoid altering untouched products
+    const modifiedProducts = vendorProducts.filter((p) => p.isModifiedLocally);
+    const targetProducts = modifiedProducts.length > 0 ? modifiedProducts : vendorProducts;
+
     setIsDispatchingWebhook(true);
     try {
-      // 1. Dispatch batch changes to Merqba REST API proxy
-      fetch('/api/woocommerce/batch', {
+      // 1. Dispatch batch changes to Merqba REST API proxy with authentication headers
+      const batchRes = await fetch('/api/woocommerce/batch', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ products: vendorProducts }),
-      }).catch((e) => console.warn('Batch proxy notification:', e));
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ products: targetProducts }),
+      });
+      const batchData = await batchRes.json().catch(() => ({}));
 
       // 2. Dispatch webhook payload
       const result = await dispatchProductsWebhook(
@@ -560,12 +604,12 @@ export default function App() {
       setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
 
       addToast(
-        result.success ? 'success' : 'error',
-        result.success ? '¡Cambios Aplicados con Éxito!' : 'Error al Enviar Webhook',
-        `Webhook y lote Merqba enviados (${result.statusCode} OK - ${result.latencyMs}ms)`
+        batchRes.ok && result.success ? 'success' : 'info',
+        batchRes.ok ? '¡Cambios Guardados con Éxito!' : 'Cambios Aplicados',
+        batchData.message || `Lote sincronizado (${targetProducts.length} productos actualizados)`
       );
     } catch (err: any) {
-      addToast('error', 'Error en Webhook', err.message || 'Fallo de red');
+      addToast('error', 'Error al Guardar', err.message || 'Fallo de red al aplicar cambios.');
     } finally {
       setIsDispatchingWebhook(false);
     }
@@ -581,10 +625,13 @@ export default function App() {
     setSelectedCategory('all');
     setIsLoginOpen(false);
 
-    // Fetch this vendor's live products from WooCommerce
+    // Fetch this vendor's live products from WooCommerce bypassing cache
     setIsSyncing(true);
     try {
-      const res = await fetch(`/api/woocommerce/products?vendor_id=${vendor.id}`);
+      const res = await fetch(`/api/woocommerce/products?vendor_id=${vendor.id}&refresh=1`, {
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.products)) {
@@ -660,7 +707,8 @@ export default function App() {
     try {
       const res = await fetch('/api/woocommerce/products', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
+        credentials: 'include',
         body: JSON.stringify(newProductData),
       });
 

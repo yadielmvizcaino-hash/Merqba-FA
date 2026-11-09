@@ -253,7 +253,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             }`}
           >
             <Coins className="w-4 h-4" />
-            <span>Tasa de cambio</span>
+            <span>Mi tasa de cambio USD/CUP</span>
             <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-full bg-[#FF5A00]/10 text-[#FF5A00]">
               USD / CUP
             </span>
@@ -451,7 +451,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                         id="newRateInput"
                         type="number"
                         step="0.01"
-                        min={minRate || 980}
+                        min={minRate || undefined}
                         required
                         value={inputRate}
                         onChange={(e) => {
@@ -459,7 +459,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                           setRateError(null);
                           setRateSuccess(null);
                         }}
-                        placeholder={minRate ? String(minRate) : '980'}
+                        placeholder={minRate ? String(minRate) : 'Ej: 500'}
                         className="w-full pl-20 pr-16 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-sm font-extrabold text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-2 focus:ring-[#FF5A00]/20"
                       />
                       <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none text-slate-500 font-bold text-xs">
@@ -468,52 +468,54 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                     </div>
 
                     {/* Quick Preset Buttons */}
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[10px] font-bold text-[#64748B] mr-1">Atajos rápidos:</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setInputRate(String(minRate));
-                          setRateError(null);
-                        }}
-                        className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
-                      >
-                        Mínimo ({minRate})
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const base = parseFloat(inputRate) || minRate || 980;
-                          setInputRate(String(base + 10));
-                          setRateError(null);
-                        }}
-                        className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
-                      >
-                        +10 CUP
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const base = parseFloat(inputRate) || minRate || 980;
-                          setInputRate(String(base + 25));
-                          setRateError(null);
-                        }}
-                        className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
-                      >
-                        +25 CUP
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const base = parseFloat(inputRate) || minRate || 980;
-                          setInputRate(String(base + 50));
-                          setRateError(null);
-                        }}
-                        className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
-                      >
-                        +50 CUP
-                      </button>
-                    </div>
+                    {minRate !== null && (
+                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                        <span className="text-[10px] font-bold text-[#64748B] mr-1">Atajos rápidos:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInputRate(String(minRate));
+                            setRateError(null);
+                          }}
+                          className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
+                        >
+                          Mínimo ({minRate})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const base = parseFloat(inputRate) || minRate;
+                            setInputRate(String(base + 10));
+                            setRateError(null);
+                          }}
+                          className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
+                        >
+                          +10 CUP
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const base = parseFloat(inputRate) || minRate;
+                            setInputRate(String(base + 25));
+                            setRateError(null);
+                          }}
+                          className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
+                        >
+                          +25 CUP
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const base = parseFloat(inputRate) || minRate;
+                            setInputRate(String(base + 50));
+                            setRateError(null);
+                          }}
+                          className="px-2 py-1 bg-slate-100 hover:bg-[#FF5A00]/10 hover:text-[#FF5A00] text-[10px] font-bold rounded-md border border-slate-200 transition-colors cursor-pointer"
+                        >
+                          +50 CUP
+                        </button>
+                      </div>
+                    )}
 
                     <div className="flex items-start gap-1.5 text-[11px] text-[#64748B] pt-1">
                       <Info className="w-3.5 h-3.5 text-[#3B82F6] shrink-0 mt-0.5" />
