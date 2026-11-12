@@ -230,8 +230,8 @@ function getSessionFromRequest(req: express.Request): ActiveSession | null {
   return session;
 }
 
-let productsCache: { timestamp: number; data: any } | null = null;
-const PRODUCTS_CACHE_TTL = 45000; // 45 seconds to prevent Traefik/WordPress overload
+const productsCacheMap = new Map<string, { timestamp: number; data: any }>();
+const PRODUCTS_CACHE_TTL = 45000; // 45 seconds per vendor to prevent Traefik/WordPress overload
 
 const escapeXml = (unsafe: string): string => {
   return unsafe.replace(/[<>&'"]/g, (c) => {
@@ -348,6 +348,47 @@ const knownVendors: Record<number, any> = {
   },
 };
 
+// Dynamically fetch all live Dokan stores from WordPress API to populate stores
+async function fetchAllDokanVendors(): Promise<Record<number, any>> {
+  try {
+    const res = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/stores?per_page=100`, {
+      headers: { 'User-Agent': 'MerqbaFA/1.0', Accept: 'application/json' },
+    });
+    if (res.ok) {
+      const stores = await res.json();
+      if (Array.isArray(stores)) {
+        for (const s of stores) {
+          if (!s.id) continue;
+          const storeId = Number(s.id);
+          const addressStr = s.address
+            ? [s.address.street_1, s.address.street_2, s.address.city, s.address.state].filter(Boolean).join(', ')
+            : 'Santa Clara, Cuba';
+
+          knownVendors[storeId] = {
+            id: storeId,
+            name: `${s.first_name || ''} ${s.last_name || ''}`.trim() || s.store_name || `Vendedor #${storeId}`,
+            storeName: s.store_name || `Tienda #${storeId}`,
+            email: `${s.slug || 'tienda'}@merqba.com`,
+            avatar: s.gravatar || s.avatar || 'https://merqba.com/wp-content/plugins/dokan-lite/assets/images/mystery-person.jpg',
+            banner: s.banner || 'https://merqba.com/wp-content/plugins/dokan-lite/assets/images/default-store-banner.png',
+            rating: s.rating?.rating ? parseFloat(s.rating.rating) || 5.0 : 5.0,
+            ratingCount: s.rating?.count || 1,
+            storeUrl: s.shop_url || `${WC_STORE_URL}/store/${s.id}/`,
+            phone: s.phone ? `+53 ${s.phone}` : '',
+            address: addressStr || 'Santa Clara, Cuba',
+          };
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('Error fetching Dokan stores dynamically:', err.message);
+  }
+  return knownVendors;
+}
+
+// Initial async load of stores
+fetchAllDokanVendors();
+
 // 1. Connection Status API (Public to app, hides keys)
 app.get('/api/woocommerce/status', (req, res) => {
   const session = getSessionFromRequest(req);
@@ -452,41 +493,6 @@ app.post('/api/woocommerce/login', async (req, res) => {
       });
     }
 
-    // 3. Authentication Succeeded! Match vendor profile from known vendors or vendorId
-    let matchedVendor = vendorId ? knownVendors[Number(vendorId)] : null;
-
-    if (!matchedVendor) {
-      for (const v of Object.values(knownVendors)) {
-        if (
-          v.email.toLowerCase() === cleanUser.toLowerCase() ||
-          v.name.toLowerCase().includes(cleanUser.toLowerCase()) ||
-          cleanUser.toLowerCase().includes(v.storeName.toLowerCase())
-        ) {
-          matchedVendor = v;
-          break;
-        }
-      }
-    }
-
-    if (!matchedVendor) {
-      const pseudoId = vendorId ? Number(vendorId) : (Math.abs(cleanUser.split('').reduce((acc, char) => (acc * 31 + char.charCodeAt(0)) | 0, 14)) % 900 + 10);
-      const displayName = cleanUser.includes('@') ? cleanUser.split('@')[0] : cleanUser;
-      const formattedStore = displayName.charAt(0).toUpperCase() + displayName.slice(1);
-      matchedVendor = {
-        id: pseudoId,
-        name: formattedStore,
-        storeName: `Tienda ${formattedStore}`,
-        email: cleanUser.includes('@') ? cleanUser : `${cleanUser}@gmail.com`,
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        banner: '',
-        rating: 5.0,
-        ratingCount: 1,
-        storeUrl: `${WC_STORE_URL}/store/${cleanUser.toLowerCase()}`,
-        phone: '',
-        address: '',
-      };
-    }
-
     // Issue unique secure session token
     const sessionId = 'merqba_sess_' + crypto.randomBytes(32).toString('hex');
     const cleanedCookies = cleanCookieHeader(postCookies);
@@ -511,6 +517,99 @@ app.post('/api/woocommerce/login', async (req, res) => {
       } catch (e) {
         // Nonce fetch optional; can be refreshed later
       }
+    }
+
+    // 3. Resolve exact real WordPress User ID & Dokan Store Profile
+    let realUserId: number | null = null;
+    let realUserName: string | null = null;
+    let realUserEmail: string | null = null;
+
+    if (cleanedCookies && initialNonce) {
+      try {
+        const meRes = await fetch(`${WC_STORE_URL}/wp-json/wp/v2/users/me`, {
+          headers: {
+            Cookie: cleanedCookies,
+            'X-WP-Nonce': initialNonce,
+            'User-Agent': 'MerqbaFA/1.0',
+            Accept: 'application/json',
+          },
+        });
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          if (meData && meData.id) {
+            realUserId = Number(meData.id);
+            realUserName = meData.name || meData.slug;
+            realUserEmail = meData.email;
+          }
+        }
+      } catch (meErr: any) {
+        console.warn('Failed to query wp/v2/users/me:', meErr.message);
+      }
+    }
+
+    // Refresh dynamic stores map from Dokan
+    await fetchAllDokanVendors();
+
+    let matchedVendor = realUserId ? knownVendors[realUserId] : (vendorId ? knownVendors[Number(vendorId)] : null);
+
+    if (!matchedVendor && realUserId) {
+      try {
+        const dokanStoreRes = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/stores/${realUserId}`, {
+          headers: { 'User-Agent': 'MerqbaFA/1.0', Accept: 'application/json' },
+        });
+        if (dokanStoreRes.ok) {
+          const storeInfo = await dokanStoreRes.json();
+          matchedVendor = {
+            id: realUserId,
+            name: realUserName || storeInfo.store_name || `Vendedor #${realUserId}`,
+            storeName: storeInfo.store_name || `Tienda #${realUserId}`,
+            email: realUserEmail || `${cleanUser}@gmail.com`,
+            avatar: storeInfo.gravatar || storeInfo.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+            banner: storeInfo.banner || '',
+            rating: 5.0,
+            ratingCount: 1,
+            storeUrl: storeInfo.shop_url || `${WC_STORE_URL}/store/${realUserId}/`,
+            phone: storeInfo.phone || '',
+            address: storeInfo.address ? [storeInfo.address.street_1, storeInfo.address.city].filter(Boolean).join(', ') : '',
+          };
+          knownVendors[realUserId] = matchedVendor;
+        }
+      } catch (storeErr: any) {
+        console.warn('Failed to query dokan store details:', storeErr.message);
+      }
+    }
+
+    if (!matchedVendor) {
+      for (const v of Object.values(knownVendors)) {
+        if (
+          v.email.toLowerCase() === cleanUser.toLowerCase() ||
+          v.name.toLowerCase().includes(cleanUser.toLowerCase()) ||
+          cleanUser.toLowerCase().includes(v.storeName.toLowerCase())
+        ) {
+          matchedVendor = v;
+          break;
+        }
+      }
+    }
+
+    if (!matchedVendor) {
+      const pseudoId = vendorId ? Number(vendorId) : (realUserId || 1);
+      const displayName = cleanUser.includes('@') ? cleanUser.split('@')[0] : cleanUser;
+      const formattedStore = displayName.charAt(0).toUpperCase() + displayName.slice(1);
+      matchedVendor = {
+        id: pseudoId,
+        name: formattedStore,
+        storeName: `Tienda ${formattedStore}`,
+        email: cleanUser.includes('@') ? cleanUser : `${cleanUser}@gmail.com`,
+        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+        banner: '',
+        rating: 5.0,
+        ratingCount: 1,
+        storeUrl: `${WC_STORE_URL}/store/${cleanUser.toLowerCase()}`,
+        phone: '',
+        address: '',
+      };
+      knownVendors[pseudoId] = matchedVendor;
     }
 
     const newSession: ActiveSession = {
@@ -565,30 +664,74 @@ app.post('/api/woocommerce/logout', (req, res) => {
 app.get('/api/woocommerce/products', async (req, res) => {
   const session = getSessionFromRequest(req);
   const vendorIdParam = req.query.vendor_id ? parseInt(req.query.vendor_id as string, 10) : (session?.vendorId || null);
+  console.log(`[PRODUCTS_ROUTE] vendor_id query: ${req.query.vendor_id}, parsed vendorIdParam: ${vendorIdParam}`);
 
   // Return from in-memory cache if fresh (< 45s) and not forced refresh
+  const cacheKey = vendorIdParam ? `vendor_${vendorIdParam}` : 'all_vendors';
   const isForcedRefresh = req.query.refresh === '1' || req.query.refresh === 'true';
-  if (!isForcedRefresh && productsCache && (Date.now() - productsCache.timestamp < PRODUCTS_CACHE_TTL)) {
-    let cachedProducts = productsCache.data.products || [];
-    if (vendorIdParam) {
-      cachedProducts = cachedProducts.filter((p: any) => p.vendorId === vendorIdParam);
-    }
+  const cachedEntry = productsCacheMap.get(cacheKey);
+
+  if (!isForcedRefresh && cachedEntry && (Date.now() - cachedEntry.timestamp < PRODUCTS_CACHE_TTL)) {
     return res.json({
-      ...productsCache.data,
-      products: cachedProducts,
+      ...cachedEntry.data,
+      vendors: Object.values(knownVendors),
     });
   }
 
+  // Ensure vendors map is updated
+  await fetchAllDokanVendors();
+
   let rawData: any[] = [];
-  let lastResponseStatus = 200;
-  let successFetch = false;
+  let isDokanSource = false;
 
-  try {
-    for (let page = 1; page <= 5; page++) {
-      const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products?per_page=100&page=${page}`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 9000);
+  // Strategy A: If vendorIdParam is provided, fetch directly from Dokan store endpoint for that vendor
+  if (vendorIdParam) {
+    try {
+      const dokanHeaders: Record<string, string> = {
+        Accept: 'application/json',
+        'User-Agent': 'MerqbaFA/1.0',
+      };
+      if (session?.cookies) {
+        const clean = cleanCookieHeader(session.cookies);
+        dokanHeaders['Cookie'] = clean;
+        const nonce = await refreshSessionNonce(session, false);
+        if (nonce) {
+          dokanHeaders['X-WP-Nonce'] = nonce;
+        }
+      }
 
+      for (let page = 1; page <= 5; page++) {
+        const dokanUrl = `${WC_STORE_URL}/wp-json/dokan/v1/stores/${vendorIdParam}/products?per_page=100&page=${page}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 9000);
+
+        const response = await fetch(dokanUrl, {
+          method: 'GET',
+          headers: dokanHeaders,
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (!response.ok) {
+          console.warn(`Dokan store ${vendorIdParam} page ${page} status ${response.status}`);
+          break;
+        }
+
+        const pageData = await response.json();
+        if (!Array.isArray(pageData) || pageData.length === 0) break;
+
+        rawData = rawData.concat(pageData);
+        isDokanSource = true;
+        if (pageData.length < 100) break;
+      }
+    } catch (dokanErr: any) {
+      console.warn(`Dokan store ${vendorIdParam} fetch exception:`, dokanErr.message);
+    }
+  }
+
+  // Strategy B: Fallback to general WooCommerce API if Dokan store fetch was not used or yielded 0 products
+  if (rawData.length === 0 && !isDokanSource) {
+    try {
       const authHeader = getWcAuthHeader();
       const headers: Record<string, string> = {
         Accept: 'application/json',
@@ -603,161 +746,94 @@ app.get('/api/woocommerce/products', async (req, res) => {
         }
       }
 
-      const response = await fetch(targetUrl, {
-        method: 'GET',
-        headers,
-        signal: controller.signal,
-      });
+      for (let page = 1; page <= 5; page++) {
+        const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products?per_page=100&page=${page}`;
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 9000);
 
-      clearTimeout(timeout);
-      lastResponseStatus = response.status;
-
-      if (!response.ok) {
-        break;
-      }
-
-      const pageData = await response.json();
-      if (!Array.isArray(pageData) || pageData.length === 0) {
-        break;
-      }
-
-      rawData = rawData.concat(pageData);
-      successFetch = true;
-
-      if (pageData.length < 100) {
-        break;
-      }
-    }
-
-    if (!successFetch || rawData.length === 0) {
-      try {
-        const storeIdToFetch = vendorIdParam || 1;
-        const dokanRes = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/stores/${storeIdToFetch}/products?per_page=100`, {
-          headers: { 'User-Agent': 'MerqbaFA/1.0', Accept: 'application/json' },
+        const response = await fetch(targetUrl, {
+          method: 'GET',
+          headers,
+          signal: controller.signal,
         });
 
-        if (dokanRes.ok) {
-          const dokanProducts = await dokanRes.json();
-          if (Array.isArray(dokanProducts) && dokanProducts.length > 0) {
-            const mapped = dokanProducts.map((item: any) => {
-              const priceNum = item.price && item.price !== '' ? parseFloat(item.price) : (item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : 0);
-              const regularNum = item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : priceNum;
-              const saleNum = item.sale_price && item.sale_price !== '' ? parseFloat(item.sale_price) : undefined;
-              const manageStock = Boolean(item.manage_stock);
-              const rawQty = item.stock_quantity !== null && item.stock_quantity !== undefined ? Number(item.stock_quantity) : null;
-              const inStock = item.in_stock === true || item.stock_status === 'instock' || (rawQty !== null && rawQty > 0);
-              const stockStatus = inStock ? 'instock' : 'outofstock';
-              const stockQuantity = rawQty !== null ? rawQty : (inStock ? 10 : 0);
-              return {
-                id: item.id,
-                vendorId: storeIdToFetch,
-                name: item.name || 'Sin nombre',
-                slug: item.slug || undefined,
-                permalink: item.permalink || undefined,
-                sku: item.sku || `SKU-${item.id}`,
-                regularPrice: isNaN(regularNum) ? 0 : regularNum,
-                salePrice: saleNum !== undefined && !isNaN(saleNum) ? saleNum : undefined,
-                price: isNaN(priceNum) ? 0 : priceNum,
-                stockQuantity: isNaN(stockQuantity) ? 0 : stockQuantity,
-                stockStatus,
-                manageStock,
-                imageUrl: item.images?.[0]?.src || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500',
-                category: item.categories?.[0]?.name || 'General',
-                tags: Array.isArray(item.tags) ? item.tags.map((t: any) => t.name) : [],
-                lastModified: item.date_modified || new Date().toISOString(),
-              };
-            });
+        clearTimeout(timeout);
+        if (!response.ok) break;
 
-            return res.json({
-              success: true,
-              source: 'live_dokan_store',
-              count: mapped.length,
-              products: mapped,
-              vendors: Object.values(knownVendors),
-            });
-          }
-        }
-      } catch (dokanErr: any) {
-        console.warn('Dokan fallback notice:', dokanErr.message);
+        const pageData = await response.json();
+        if (!Array.isArray(pageData) || pageData.length === 0) break;
+
+        rawData = rawData.concat(pageData);
+        if (pageData.length < 100) break;
       }
-
-      return res.status(200).json({
-        success: false,
-        source: 'store_api_notice',
-        message: `La API de WooCommerce respondió con estado ${lastResponseStatus}`,
-        products: [],
-      });
+    } catch (wcErr: any) {
+      console.warn('WooCommerce general API fetch exception:', wcErr.message);
     }
-
-    if (Array.isArray(rawData)) {
-      const mapped = rawData.map((item: any) => {
-        const dokanMeta = item.meta_data?.find(
-          (m: any) => m.key === '_dokan_vendor_id' || m.key === 'dokan_vendor' || m.key === '_dokan_store_id'
-        )?.value;
-        const vendorFromMeta = dokanMeta ? parseInt(String(dokanMeta), 10) : null;
-        const storeId =
-          vendorFromMeta ||
-          (item.store?.id ? Number(item.store.id) : (item.author ? Number(item.author) : 1));
-
-        const priceNum = item.price && item.price !== '' ? parseFloat(item.price) : (item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : 0);
-        const regularNum = item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : priceNum;
-        const saleNum = item.sale_price && item.sale_price !== '' ? parseFloat(item.sale_price) : undefined;
-        const manageStock = Boolean(item.manage_stock);
-        const rawQty = item.stock_quantity !== null && item.stock_quantity !== undefined ? Number(item.stock_quantity) : null;
-        const inStock = item.stock_status === 'instock' || (item.in_stock !== undefined ? Boolean(item.in_stock) : false) || (rawQty !== null && rawQty > 0);
-        const stockStatus = inStock ? 'instock' : 'outofstock';
-        const stockQuantity = rawQty !== null ? rawQty : (inStock ? 10 : 0);
-
-        return {
-          id: item.id,
-          vendorId: storeId,
-          name: item.name || 'Sin nombre',
-          slug: item.slug || undefined,
-          permalink: item.permalink || undefined,
-          sku: item.sku || `SKU-${item.id}`,
-          regularPrice: isNaN(regularNum) ? 0 : regularNum,
-          salePrice: saleNum !== undefined && !isNaN(saleNum) ? saleNum : undefined,
-          price: isNaN(priceNum) ? 0 : priceNum,
-          stockQuantity: isNaN(stockQuantity) ? 0 : stockQuantity,
-          stockStatus,
-          manageStock,
-          imageUrl: item.images?.[0]?.src || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500',
-          category: item.categories?.[0]?.name || 'General',
-          tags: Array.isArray(item.tags) ? item.tags.map((t: any) => t.name) : [],
-          lastModified: item.date_modified || new Date().toISOString(),
-        };
-      });
-
-      productsCache = {
-        timestamp: Date.now(),
-        data: {
-          success: true,
-          source: 'live_woocommerce_api',
-          count: mapped.length,
-          products: mapped,
-          vendors: Object.values(knownVendors),
-        },
-      };
-
-      let filteredProducts = mapped;
-      if (vendorIdParam) {
-        filteredProducts = mapped.filter((p: any) => p.vendorId === vendorIdParam);
-      }
-
-      return res.json({
-        success: true,
-        source: 'live_woocommerce_api',
-        count: filteredProducts.length,
-        products: filteredProducts,
-        vendors: Object.values(knownVendors),
-      });
-    }
-
-    return res.status(500).json({ success: false, error: 'Unexpected response format' });
-  } catch (err: any) {
-    console.error('WooCommerce API route error:', err);
-    return res.status(500).json({ success: false, error: err.message });
   }
+
+  // Map raw data into application Product interface
+  const mapped = rawData.map((item: any) => {
+    let storeId = vendorIdParam || 1;
+    if (!isDokanSource) {
+      const dokanMeta = item.meta_data?.find(
+        (m: any) => m.key === '_dokan_vendor_id' || m.key === 'dokan_vendor' || m.key === '_dokan_store_id'
+      )?.value;
+      const vendorFromMeta = dokanMeta ? parseInt(String(dokanMeta), 10) : null;
+      storeId = vendorFromMeta || (item.store?.id ? Number(item.store.id) : (item.author ? Number(item.author) : (vendorIdParam || 1)));
+    }
+
+    const priceNum = item.price && item.price !== '' ? parseFloat(item.price) : (item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : 0);
+    const regularNum = item.regular_price && item.regular_price !== '' ? parseFloat(item.regular_price) : priceNum;
+    const saleNum = item.sale_price && item.sale_price !== '' ? parseFloat(item.sale_price) : undefined;
+    const manageStock = Boolean(item.manage_stock);
+    const rawQty = item.stock_quantity !== null && item.stock_quantity !== undefined ? Number(item.stock_quantity) : null;
+    const inStock = item.in_stock === true || item.stock_status === 'instock' || (rawQty !== null && rawQty > 0);
+    const stockStatus = inStock ? 'instock' : 'outofstock';
+    const stockQuantity = rawQty !== null ? rawQty : (inStock ? 10 : 0);
+
+    return {
+      id: item.id,
+      vendorId: storeId,
+      name: item.name || 'Sin nombre',
+      slug: item.slug || undefined,
+      permalink: item.permalink || undefined,
+      sku: item.sku || `SKU-${item.id}`,
+      regularPrice: isNaN(regularNum) ? 0 : regularNum,
+      salePrice: saleNum !== undefined && !isNaN(saleNum) ? saleNum : undefined,
+      price: isNaN(priceNum) ? 0 : priceNum,
+      stockQuantity: isNaN(stockQuantity) ? 0 : stockQuantity,
+      stockStatus,
+      manageStock,
+      imageUrl: item.images?.[0]?.src || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500',
+      category: item.categories?.[0]?.name || 'General',
+      tags: Array.isArray(item.tags) ? item.tags.map((t: any) => t.name) : [],
+      lastModified: item.date_modified || new Date().toISOString(),
+    };
+  });
+
+  let finalProducts = mapped;
+  if (vendorIdParam && !isDokanSource) {
+    finalProducts = mapped.filter((p: any) => p.vendorId === vendorIdParam);
+  }
+
+  productsCacheMap.set(cacheKey, {
+    timestamp: Date.now(),
+    data: {
+      success: true,
+      source: isDokanSource ? 'live_dokan_store' : 'live_woocommerce_api',
+      count: finalProducts.length,
+      products: finalProducts,
+      vendors: Object.values(knownVendors),
+    },
+  });
+
+  return res.json({
+    success: true,
+    source: isDokanSource ? 'live_dokan_store' : 'live_woocommerce_api',
+    count: finalProducts.length,
+    products: finalProducts,
+    vendors: Object.values(knownVendors),
+  });
 });
 
 // Helper: WordPress XML-RPC Media Upload
@@ -883,7 +959,7 @@ app.post('/api/woocommerce/upload-image', async (req, res) => {
       }
     }
 
-    productsCache = null;
+    productsCacheMap.clear();
     return res.json({
       success: true,
       url: uploadedMediaUrl,
@@ -1047,7 +1123,7 @@ app.post('/api/woocommerce/batch', async (req, res) => {
       isSuccess = successCount > 0;
     }
 
-    productsCache = null;
+    productsCacheMap.clear();
 
     if (isSuccess) {
       return res.json({
@@ -1127,7 +1203,7 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
   }
 
   // Invalidate in-memory products cache
-  productsCache = null;
+  productsCacheMap.clear();
 
   const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${productId}`;
   const dokanTargetUrl = `${WC_STORE_URL}/wp-json/dokan/v1/products/${productId}`;
@@ -1293,7 +1369,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
       }
     }
 
-    productsCache = null;
+    productsCacheMap.clear();
 
     if (response.ok) {
       const createdWcProduct = await response.json();
@@ -1394,7 +1470,7 @@ app.delete('/api/woocommerce/products/:id', async (req, res) => {
 
     clearTimeout(timeout);
 
-    productsCache = null;
+    productsCacheMap.clear();
     return res.json({
       success: true,
       statusCode: response.status,

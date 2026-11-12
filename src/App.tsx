@@ -526,7 +526,7 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.success && Array.isArray(data.products) && data.products.length > 0) {
+        if (data.success && Array.isArray(data.products)) {
           // 1. Update products for active vendor
           setProducts((prev) => {
             const others = prev.filter((p) => p.vendorId !== currentVendorId);
@@ -541,29 +541,13 @@ export default function App() {
             saveStoredVendors(data.vendors);
           }
 
-          // 3. Ensure current vendor has products
-          const currentHasProducts = data.products.some((p: Product) => p.vendorId === currentVendorId);
-          let targetVendor = vendors.find((v) => v.id === currentVendorId);
-
-          if (!currentHasProducts || currentVendorId === 14) {
-            // Find store with most products (e.g. ID 1: Merqba - Yadiel Moya with 56 products)
-            const countByVendor: Record<number, number> = {};
-            data.products.forEach((p: Product) => {
-              countByVendor[p.vendorId] = (countByVendor[p.vendorId] || 0) + 1;
-            });
-            const topVendorId = Object.keys(countByVendor).map(Number).sort((a, b) => countByVendor[b] - countByVendor[a])[0] || 1;
-            setActiveVendorId(topVendorId);
-            setCurrentVendorId(topVendorId);
-            targetVendor = (data.vendors || vendors).find((v: any) => v.id === topVendorId);
-          }
-
-          const vendorProdCount = data.products.filter((p: Product) => p.vendorId === (targetVendor?.id || currentVendorId)).length;
+          const currentStore = (data.vendors || vendors).find((v: any) => v.id === currentVendorId);
 
           if (!silent) {
             addToast(
               'success',
               'Catálogo Real Sincronizado',
-              `${data.products.length} productos en vivo de https://merqba.com. Mostrando ${vendorProdCount} productos de "${targetVendor?.storeName || 'tu tienda'}".`
+              `Sincronización completada. Mostrando ${data.products.length} productos de "${currentStore?.storeName || 'tu tienda'}".`
             );
           }
         } else {
