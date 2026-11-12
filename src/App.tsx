@@ -425,15 +425,22 @@ export default function App() {
       prev.map((item) => (item.id === updated.id ? updated : item))
     );
 
-    // 2. Persist single product stock/status immediately to WooCommerce REST API
+    // 2. Persist single product (price, regularPrice, stock, name) immediately to WooCommerce REST API
     try {
-      fetch(`/api/woocommerce/products/${updated.id}/stock`, {
-        method: 'POST',
+      fetch(`/api/woocommerce/products/${updated.id}`, {
+        method: 'PUT',
         headers: getAuthHeaders(),
         credentials: 'include',
         body: JSON.stringify({
+          name: updated.name,
+          price: updated.price,
+          regularPrice: updated.regularPrice !== undefined ? updated.regularPrice : updated.price,
+          salePrice: updated.salePrice,
           stockStatus: updated.stockStatus,
           stockQuantity: updated.stockQuantity,
+          imageUrl: updated.imageUrl,
+          sku: updated.sku,
+          category: updated.category,
         }),
       })
         .then((res) => res.json())
@@ -442,11 +449,22 @@ export default function App() {
             setProducts((prev) =>
               prev.map((item) => (item.id === updated.id ? { ...item, isModifiedLocally: false } : item))
             );
+            addToast(
+              'success',
+              'Precio y Producto Actualizados',
+              `"${updated.name.slice(0, 25)}" actualizado en WooCommerce (${config.currencySymbol}${updated.price.toFixed(2)}).`
+            );
+          } else {
+            addToast(
+              'info',
+              'Cambio Guardado Localmente',
+              `"${updated.name.slice(0, 25)}" guardado. Usa "Sincronizar Lote" para enviar a WooCommerce.`
+            );
           }
         })
-        .catch((e) => console.warn('Single stock sync notice:', e));
+        .catch((e) => console.warn('Single product sync notice:', e));
     } catch (err) {
-      console.warn('Stock update notice:', err);
+      console.warn('Product update notice:', err);
     }
 
     // 3. If realtime sync is active, trigger webhook after 600ms debounce

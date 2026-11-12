@@ -11,7 +11,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+// The dev server must always run on port 3000 (proxied by Nginx on port 8080).
+const args = process.argv.slice(2);
+const portArgIndex = args.indexOf('--port');
+const portFromArgs = portArgIndex !== -1 && args[portArgIndex + 1] ? parseInt(args[portArgIndex + 1], 10) : null;
+const PORT = portFromArgs || 3000;
 
 // Ensure public/uploads directory exists for resilient media persistence
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
@@ -36,6 +40,7 @@ interface ActiveSession {
   password?: string;
   cookies?: string;
   wpNonce?: string;
+  nonceUpdatedAt?: number;
   vendorId: number;
   createdAt: number;
   expiresAt: number;
@@ -76,47 +81,79 @@ function saveSessionsToFile() {
 // Clean raw cookies into a standard Cookie header (key=value; key2=value2)
 function cleanCookieHeader(rawCookies: string | string[] | undefined): string {
   if (!rawCookies) return '';
-  const entries: string[] = [];
   const list = Array.isArray(rawCookies) ? rawCookies : [rawCookies];
+  const map = new Map<string, string>();
+
   for (const item of list) {
-    const parts = item.split(';');
+    // Split on either semicolon or comma that precedes a cookie key
+    const parts = item.split(/;\s*|,\s*(?=[a-zA-Z0-9_%-]+=[^;]*)/);
     for (const part of parts) {
       const trimmed = part.trim();
-      const lower = trimmed.toLowerCase();
-      if (
-        !lower.startsWith('path=') &&
-        !lower.startsWith('expires=') &&
-        !lower.startsWith('max-age=') &&
-        !lower.startsWith('domain=') &&
-        !lower.startsWith('samesite=') &&
-        lower !== 'secure' &&
-        lower !== 'httponly' &&
-        trimmed.includes('=')
-      ) {
-        entries.push(trimmed);
+      const idx = trimmed.indexOf('=');
+      if (idx > 0) {
+        const k = trimmed.slice(0, idx).trim();
+        const v = trimmed.slice(idx + 1).trim();
+        const lower = k.toLowerCase();
+        if (
+          !lower.startsWith('path') &&
+          !lower.startsWith('expires') &&
+          !lower.startsWith('max-age') &&
+          !lower.startsWith('domain') &&
+          !lower.startsWith('samesite') &&
+          lower !== 'secure' &&
+          lower !== 'httponly'
+        ) {
+          map.set(k, v);
+        }
       }
     }
   }
-  const map = new Map<string, string>();
-  for (const entry of entries) {
-    const idx = entry.indexOf('=');
-    if (idx > 0) {
-      const k = entry.slice(0, idx).trim();
-      const v = entry.slice(idx + 1).trim();
-      map.set(k, v);
-    }
-  }
+
   return Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
+// Helper to obtain complete authenticated headers for WooCommerce & Dokan REST calls
+async function getAuthenticatedHeaders(session: ActiveSession | null, forceRefreshNonce = false): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'User-Agent': 'MerqbaFA/1.0',
+  };
+
+  const authHeader = getWcAuthHeader();
+  if (authHeader) {
+    headers['Authorization'] = authHeader;
+  }
+
+  if (session?.cookies) {
+    const clean = cleanCookieHeader(session.cookies);
+    headers['Cookie'] = clean;
+    const nonce = await refreshSessionNonce(session, forceRefreshNonce);
+    if (nonce) {
+      headers['X-WP-Nonce'] = nonce;
+    }
+  }
+
+  if (!authHeader && session?.username && session?.password) {
+    headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
+  }
+
+  return headers;
+}
+
 // Fetch or refresh session wp_rest nonce from WordPress /mi-cuenta/
-async function refreshSessionNonce(session: ActiveSession): Promise<string | undefined> {
+async function refreshSessionNonce(session: ActiveSession, force = false): Promise<string | undefined> {
   if (!session.cookies) return undefined;
+  const now = Date.now();
+  if (!force && session.wpNonce && session.nonceUpdatedAt && (now - session.nonceUpdatedAt < 30 * 60 * 1000)) {
+    return session.wpNonce;
+  }
   try {
+    const clean = cleanCookieHeader(session.cookies);
     const res = await fetch(`${WC_STORE_URL}/mi-cuenta/`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        Cookie: session.cookies,
+        Cookie: clean,
       },
     });
     if (res.ok) {
@@ -124,6 +161,7 @@ async function refreshSessionNonce(session: ActiveSession): Promise<string | und
       const m = html.match(/wpApiSettings\s*=\s*\{[^}]*\"nonce\"\s*:\s*\"([^\"]+)\"/);
       if (m && m[1]) {
         session.wpNonce = m[1];
+        session.nonceUpdatedAt = now;
         saveSessionsToFile();
         return m[1];
       }
@@ -909,11 +947,18 @@ app.post('/api/woocommerce/batch', async (req, res) => {
     .map((p: any) => {
       const isInstock = p.stockStatus === 'instock';
       const qty = isInstock ? (Number(p.stockQuantity) > 0 ? Number(p.stockQuantity) : 10) : 0;
+      const finalRegular = p.regularPrice !== undefined && p.regularPrice !== null && p.regularPrice !== ''
+        ? String(p.regularPrice)
+        : (p.price !== undefined && p.price !== null && p.price !== '' ? String(p.price) : undefined);
+      const finalSale = p.salePrice !== undefined && p.salePrice !== null && p.salePrice !== ''
+        ? String(p.salePrice)
+        : (p.salePrice === '' || p.salePrice === null ? '' : undefined);
+
       return {
         id: p.id,
         name: p.name,
-        regular_price: p.regularPrice !== undefined ? String(p.regularPrice) : undefined,
-        sale_price: p.salePrice !== undefined && p.salePrice !== '' ? String(p.salePrice) : undefined,
+        regular_price: finalRegular,
+        sale_price: finalSale,
         price: String(p.price),
         manage_stock: true,
         stock_quantity: qty,
@@ -931,108 +976,164 @@ app.post('/api/woocommerce/batch', async (req, res) => {
   }
 
   const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/batch`;
-  const authHeader = getWcAuthHeader();
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      'User-Agent': 'MerqbaFA/1.0',
-    };
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    } else if (session?.username && session?.password) {
-      headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
-      if (session.cookies) {
-        headers['Cookie'] = session.cookies;
+    const headers = await getAuthenticatedHeaders(session);
+
+    let isSuccess = false;
+    let successCount = 0;
+    let responseData: any = null;
+
+    // 1. First attempt native WC batch update
+    try {
+      const response = await fetch(targetUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(batchPayload),
+        signal: controller.signal,
+      });
+
+      if (response.ok) {
+        responseData = await response.json();
+        isSuccess = true;
+        successCount = updateItems.length;
       }
+    } catch (e: any) {
+      console.warn('Native WC batch sync exception:', e.message);
+    } finally {
+      clearTimeout(timeout);
     }
 
-    const response = await fetch(targetUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(batchPayload),
-      signal: controller.signal,
-    });
+    // 2. Fallback: If WC batch was rejected (e.g. 403 because Dokan vendors lack manage_woocommerce permission),
+    // update each product individually via PUT /wp-json/wc/v3/products/:id or Dokan endpoint
+    if (!isSuccess && updateItems.length > 0) {
+      for (const item of updateItems) {
+        try {
+          const itemUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${item.id}`;
+          const dokanItemUrl = `${WC_STORE_URL}/wp-json/dokan/v1/products/${item.id}`;
+          const itemPayload: Record<string, any> = {};
+          if (item.name) itemPayload.name = item.name;
+          if (item.regular_price !== undefined) itemPayload.regular_price = item.regular_price;
+          if (item.sale_price !== undefined) itemPayload.sale_price = item.sale_price;
+          if (item.stock_status !== undefined) {
+            itemPayload.manage_stock = true;
+            itemPayload.stock_status = item.stock_status;
+            itemPayload.stock_quantity = item.stock_quantity;
+          }
+          if (item.images) itemPayload.images = item.images;
 
-    clearTimeout(timeout);
+          let singleRes = await fetch(itemUrl, {
+            method: 'PUT',
+            headers,
+            body: JSON.stringify(itemPayload),
+          });
+          if (!singleRes.ok) {
+            singleRes = await fetch(dokanItemUrl, {
+              method: 'PUT',
+              headers,
+              body: JSON.stringify(itemPayload),
+            });
+          }
+          if (singleRes.ok) {
+            successCount++;
+          }
+        } catch (singleErr: any) {
+          console.warn(`Error updating product #${item.id} in fallback:`, singleErr.message);
+        }
+      }
+      isSuccess = successCount > 0;
+    }
 
-    if (response.ok) {
-      const data = await response.json();
-      productsCache = null;
+    productsCache = null;
+
+    if (isSuccess) {
       return res.json({
         success: true,
-        statusCode: response.status,
-        message: 'Lote de productos sincronizado con WooCommerce',
-        data,
+        statusCode: 200,
+        savedToWooCommerce: true,
+        message: `${successCount} productos actualizados con éxito en WooCommerce.`,
+        data: responseData,
       });
     } else {
       return res.json({
         success: true,
         statusCode: 200,
+        savedToWooCommerce: false,
         simulated: true,
-        message: `Cambios aplicados localmente y listos para reintento (HTTP ${response.status})`,
+        message: 'Cambios aplicados localmente.',
       });
     }
   } catch (err: any) {
     return res.json({
       success: true,
       statusCode: 200,
+      savedToWooCommerce: false,
       simulated: true,
-      message: 'Cambios guardados localmente. Sincronización encolada.',
+      message: 'Cambios guardados localmente.',
     });
   }
 });
 
-// 3a. Update Single Product Stock / Status immediately
-app.post('/api/woocommerce/products/:id/stock', async (req, res) => {
+// 3a. Update Single Product (Price, Regular Price, Sale Price, Stock, Name, Images)
+async function handleSingleProductUpdate(req: express.Request, res: express.Response) {
   const session = getSessionFromRequest(req);
   const productId = parseInt(req.params.id, 10);
   if (isNaN(productId)) {
     return res.status(400).json({ success: false, message: 'ID de producto inválido' });
   }
 
-  const { stockStatus, stockQuantity } = req.body;
-  if (!stockStatus) {
-    return res.status(400).json({ success: false, message: 'Falta stockStatus' });
+  const { name, price, regularPrice, salePrice, stockStatus, stockQuantity, imageUrl } = req.body;
+
+  const payload: Record<string, any> = {};
+
+  if (name && typeof name === 'string') {
+    payload.name = name.trim();
   }
 
-  const isInstock = stockStatus === 'instock';
-  const finalQty = isInstock ? (Number(stockQuantity) > 0 ? Number(stockQuantity) : 10) : 0;
-  const finalStatus = isInstock ? 'instock' : 'outofstock';
+  // Authoritative regular_price calculation
+  const finalRegular = regularPrice !== undefined && regularPrice !== null && regularPrice !== ''
+    ? String(regularPrice)
+    : (price !== undefined && price !== null && price !== '' ? String(price) : undefined);
 
-  // Invalidate cache immediately so next sync gets fresh live state
+  if (finalRegular !== undefined) {
+    payload.regular_price = finalRegular;
+  }
+
+  if (salePrice !== undefined && salePrice !== null && salePrice !== '') {
+    payload.sale_price = String(salePrice);
+  } else if (salePrice === '' || salePrice === null) {
+    payload.sale_price = '';
+  }
+
+  // Stock management
+  if (stockStatus !== undefined) {
+    const isInstock = stockStatus === 'instock';
+    const finalQty = isInstock ? (Number(stockQuantity) > 0 ? Number(stockQuantity) : 10) : 0;
+    payload.manage_stock = true;
+    payload.stock_status = isInstock ? 'instock' : 'outofstock';
+    payload.stock_quantity = finalQty;
+  } else if (stockQuantity !== undefined) {
+    const qty = Number(stockQuantity);
+    payload.manage_stock = true;
+    payload.stock_quantity = qty;
+    payload.stock_status = qty > 0 ? 'instock' : 'outofstock';
+  }
+
+  if (imageUrl) {
+    payload.images = [{ src: imageUrl }];
+  }
+
+  // Invalidate in-memory products cache
   productsCache = null;
 
   const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${productId}`;
   const dokanTargetUrl = `${WC_STORE_URL}/wp-json/dokan/v1/products/${productId}`;
-  const authHeader = getWcAuthHeader();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'User-Agent': 'MerqbaFA/1.0',
-  };
-
-  if (authHeader) {
-    headers['Authorization'] = authHeader;
-  } else if (session?.username && session?.password) {
-    headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
-    if (session.cookies) {
-      headers['Cookie'] = session.cookies;
-    }
-  }
-
-  const payload = {
-    manage_stock: true,
-    stock_status: finalStatus,
-    stock_quantity: finalQty,
-  };
 
   try {
+    let headers = await getAuthenticatedHeaders(session);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
 
@@ -1045,7 +1146,26 @@ app.post('/api/woocommerce/products/:id/stock', async (req, res) => {
 
     clearTimeout(timeout);
 
-    // If WC failed, fallback to Dokan REST API
+    // If rejected due to expired nonce (403), refresh nonce and retry once
+    if (response.status === 403 && session) {
+      headers = await getAuthenticatedHeaders(session, true);
+      const retryController = new AbortController();
+      const retryTimeout = setTimeout(() => retryController.abort(), 9000);
+      try {
+        response = await fetch(targetUrl, {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify(payload),
+          signal: retryController.signal,
+        });
+      } catch (retryErr) {
+        // ignore
+      } finally {
+        clearTimeout(retryTimeout);
+      }
+    }
+
+    // If WC failed or returned unauthorized, fallback to Dokan REST API
     if (!response.ok) {
       const dokanController = new AbortController();
       const dokanTimeout = setTimeout(() => dokanController.abort(), 9000);
@@ -1065,27 +1185,36 @@ app.post('/api/woocommerce/products/:id/stock', async (req, res) => {
       }
     }
 
+    const saved = response.ok;
+    const responseBody = saved ? await response.json().catch(() => ({})) : null;
+
     return res.json({
       success: true,
       productId,
-      stockStatus: finalStatus,
-      stockQuantity: finalQty,
-      savedToWooCommerce: response.ok,
-      message: response.ok
-        ? `Stock actualizado en WooCommerce (${finalStatus === 'instock' ? 'Disponible' : 'Agotado'})`
-        : `Stock actualizado (${finalStatus})`,
+      price: finalRegular ? parseFloat(finalRegular) : undefined,
+      regularPrice: finalRegular ? parseFloat(finalRegular) : undefined,
+      salePrice: payload.sale_price !== undefined && payload.sale_price !== '' ? parseFloat(payload.sale_price) : undefined,
+      stockStatus: payload.stock_status,
+      stockQuantity: payload.stock_quantity,
+      savedToWooCommerce: saved,
+      data: responseBody,
+      message: saved
+        ? `Producto #${productId} actualizado con éxito en WooCommerce.`
+        : `Producto #${productId} guardado localmente.`,
     });
   } catch (err: any) {
     return res.json({
       success: true,
       productId,
-      stockStatus: finalStatus,
-      stockQuantity: finalQty,
       savedToWooCommerce: false,
-      message: `Stock guardado localmente (${finalStatus})`,
+      message: `Producto #${productId} guardado localmente (${err.message}).`,
     });
   }
-});
+}
+
+app.put('/api/woocommerce/products/:id', handleSingleProductUpdate);
+app.post('/api/woocommerce/products/:id', handleSingleProductUpdate);
+app.post('/api/woocommerce/products/:id/stock', handleSingleProductUpdate);
 
 // 3b. Create Single Product on WooCommerce REST API
 app.post('/api/woocommerce/products', async (req, res) => {
@@ -1655,7 +1784,7 @@ async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: 'spa',
     });
     app.use(vite.middlewares);
