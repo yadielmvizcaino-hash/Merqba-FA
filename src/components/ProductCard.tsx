@@ -6,7 +6,6 @@ import {
   Minus,
   Plus,
   Upload,
-  ExternalLink,
   Share2,
   Trash2,
   Filter,
@@ -173,7 +172,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     }
   };
 
-  // Image upload directly to WordPress Media Database & WooCommerce
+  // Image upload directly to store media storage
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -214,12 +213,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               onUpdateProduct({
                 ...product,
                 imageUrl: data.url,
-                isModifiedLocally: false, // successfully uploaded and assigned to product in WooCommerce
+                isModifiedLocally: false,
                 lastModified: new Date().toISOString(),
               });
             }
           } catch (err) {
-            console.warn('Error subiendo imagen a WordPress:', err);
+            console.warn('Error subiendo imagen:', err);
           } finally {
             setIsUploadingImage(false);
           }
@@ -320,11 +319,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                 <span className="text-[10px] font-semibold leading-tight">Cambiar foto</span>
               </button>
 
-              {/* Uploading to WordPress Loader Overlay */}
+              {/* Uploading Image Loader Overlay */}
               {isUploadingImage && (
                 <div className="absolute inset-0 bg-black/85 z-20 flex flex-col items-center justify-center text-white p-1 text-center">
                   <Loader2 className="w-5 h-5 text-[#FF5A00] animate-spin mb-1" />
-                  <span className="text-[9px] font-bold leading-tight text-[#FFB380]">Subiendo a WordPress...</span>
+                  <span className="text-[9px] font-bold leading-tight text-[#FFB380]">Subiendo imagen...</span>
                 </div>
               )}
             </div>
@@ -476,7 +475,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   className="text-xs text-[#64748B] hover:text-[#EA580C] font-semibold hover:underline flex items-center gap-0.5 cursor-pointer px-1 py-1"
                 >
                   <span>Detalles</span>
-                  <ExternalLink className="w-3 h-3" />
+                  <Edit2 className="w-3 h-3" />
                 </button>
 
                 {/* Delete Product Button */}

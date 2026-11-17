@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Upload, Camera, Check, Tag, DollarSign, Layers, Image as ImageIcon, Trash2, ExternalLink, Loader2 } from 'lucide-react';
+import { X, Upload, Check, Trash2, Loader2 } from 'lucide-react';
 import { Product, StoreConfig, StockStatus } from '../types';
 
 interface ProductQuickEditModalProps {
@@ -48,7 +48,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string | null>(null);
 
-  // Gallery file handler - Uploads directly to WordPress Media Database
+  // Gallery file handler - Uploads directly to store media storage
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -81,10 +81,10 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
             const data = await res.json();
             if (data.success && data.url) {
               setImageUrl(data.url);
-              setUploadSuccessMsg('Guardada en base de datos de WordPress');
+              setUploadSuccessMsg('Imagen guardada correctamente');
             }
           } catch (err) {
-            console.warn('Error subiendo imagen a WordPress:', err);
+            console.warn('Error subiendo imagen:', err);
           } finally {
             setIsUploadingImage(false);
           }
@@ -134,20 +134,6 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
 
   if (!isOpen || !product) return null;
 
-  const productSlug =
-    product.slug ||
-    product.name
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-
-  const productUrl =
-    product.permalink && product.permalink.startsWith('http')
-      ? product.permalink.replace(/\/+$/, '')
-      : `${config.storeUrl.replace(/\/+$/, '')}/producto/${productSlug}`;
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-black/60 backdrop-blur-xs">
       <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-[#E2E8F0] overflow-hidden max-h-[92vh] flex flex-col">
@@ -158,16 +144,6 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
               <span className="text-[10px] font-bold tracking-wider uppercase text-[#FFA000]">
                 Edición Rápida • ID: #{product.id}
               </span>
-              <a
-                href={productUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[10px] text-slate-400 hover:text-[#FFA000] inline-flex items-center gap-1 hover:underline transition-colors"
-                title="Ver producto en la tienda oficial Merqba"
-              >
-                <span>Ver en tienda</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
             </div>
             <h2 className="text-base font-bold truncate text-white">{product.name}</h2>
           </div>
@@ -215,7 +191,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                   {isUploadingImage ? (
                     <>
                       <Loader2 className="w-4 h-4 text-[#FF5A00] animate-spin" />
-                      <span>Subiendo a WordPress...</span>
+                      <span>Subiendo imagen...</span>
                     </>
                   ) : (
                     <>

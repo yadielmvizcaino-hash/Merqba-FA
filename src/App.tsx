@@ -27,7 +27,6 @@ import { CreateProductModal } from './components/CreateProductModal';
 import { DeleteConfirmationModal } from './components/DeleteConfirmationModal';
 import { ShareProductModal } from './components/ShareProductModal';
 import { LoginModal } from './components/LoginModal';
-import { WebhookModal } from './components/WebhookModal';
 import { StoreConfigModal } from './components/StoreConfigModal';
 import { BulkEditModal, BulkEditChanges } from './components/BulkEditModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
@@ -95,7 +94,6 @@ export default function App() {
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(!hasAuthCookie);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(hasAuthCookie);
   const [isConfigOpen, setIsConfigOpen] = useState(false);
-  const [isWebhookOpen, setIsWebhookOpen] = useState(false);
   const [isCreateProductOpen, setIsCreateProductOpen] = useState(false);
   const [quickEditProduct, setQuickEditProduct] = useState<Product | null>(null);
   const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
@@ -452,13 +450,13 @@ export default function App() {
             addToast(
               'success',
               'Precio y Producto Actualizados',
-              `"${updated.name.slice(0, 25)}" actualizado en WooCommerce (${config.currencySymbol}${updated.price.toFixed(2)}).`
+              `"${updated.name.slice(0, 25)}" actualizado en tu tienda (${config.currencySymbol}${updated.price.toFixed(2)}).`
             );
           } else {
             addToast(
               'info',
               'Cambio Guardado Localmente',
-              `"${updated.name.slice(0, 25)}" guardado. Usa "Sincronizar Lote" para enviar a WooCommerce.`
+              `"${updated.name.slice(0, 25)}" guardado localmente. Pulsa "Aplicar Cambios" para sincronizar.`
             );
           }
         })
@@ -467,7 +465,7 @@ export default function App() {
       console.warn('Product update notice:', err);
     }
 
-    // 3. If realtime sync is active, trigger webhook after 600ms debounce
+    // 3. If realtime sync is active, trigger background sync after 600ms debounce
     if (config.realtimeSync) {
       if (realtimeDebounceTimer.current) {
         clearTimeout(realtimeDebounceTimer.current);
@@ -477,7 +475,7 @@ export default function App() {
         const currentVendorItems = currentProducts.filter((p) => p.vendorId === currentVendor.id);
         const result = await dispatchProductsWebhook(currentVendor, currentVendorItems, config, 'realtime_change');
         setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
-        addToast('info', 'Webhook en Tiempo Real', `Actualización de "${updated.name.slice(0, 20)}..." sincronizada.`);
+        addToast('info', 'Sincronización en Tiempo Real', `Actualización de "${updated.name.slice(0, 20)}..." aplicada.`);
       }, 600);
     }
   };
@@ -552,7 +550,7 @@ export default function App() {
           }
         } else {
           if (!silent) {
-            addToast('info', 'Catálogo Sincronizado', 'Conexión exitosa con la API de https://merqba.com.');
+            addToast('info', 'Catálogo Sincronizado', 'Catálogo de tu tienda sincronizado correctamente.');
           }
         }
       } else {
@@ -608,7 +606,7 @@ export default function App() {
       addToast(
         batchRes.ok && result.success ? 'success' : 'info',
         batchRes.ok ? '¡Cambios Guardados con Éxito!' : 'Cambios Aplicados',
-        batchData.message || `Lote sincronizado (${targetProducts.length} productos actualizados)`
+        batchData.message || `Cambios sincronizados (${targetProducts.length} productos actualizados)`
       );
     } catch (err: any) {
       addToast('error', 'Error al Guardar', err.message || 'Fallo de red al aplicar cambios.');
@@ -685,7 +683,7 @@ export default function App() {
   const handleSaveConfig = (updated: StoreConfig) => {
     setConfig(updated);
     saveStoredConfig(updated);
-    addToast('success', 'Configuración Guardada', 'Parámetros de Merqba y Webhook actualizados.');
+    addToast('success', 'Configuración Guardada', 'Configuración de tu tienda actualizada.');
   };
 
   // Handle catalog reset to defaults
@@ -730,11 +728,11 @@ export default function App() {
         addToast(
           'success',
           'Producto Creado con Éxito',
-          `"${createdProduct.name}" ha sido creado en WooCommerce (ID #${createdProduct.id}).`
+          `"${createdProduct.name}" ha sido creado en tu tienda (ID #${createdProduct.id}).`
         );
         return true;
       } else {
-        const errMsg = data.message || 'No se pudo crear el producto en WooCommerce. Revisa los datos e intenta de nuevo.';
+        const errMsg = data.message || 'No se pudo crear el producto. Revisa los datos e intenta de nuevo.';
         addToast('error', 'Error al Crear Producto', errMsg);
         return false;
       }
@@ -776,7 +774,6 @@ export default function App() {
         onApplyChanges={handleApplyChanges}
         onOpenVendorLogin={() => setIsLoginOpen(true)}
         onOpenStoreConfig={() => setIsConfigOpen(true)}
-        onOpenWebhookLogs={() => setIsWebhookOpen(true)}
         lastSyncTime={lastSyncTime}
         isOnline={isOnline}
         isAuthenticated={isAuthenticated}
@@ -1039,18 +1036,6 @@ export default function App() {
         }}
         onAddCustomVendor={handleAddCustomVendor}
         onShowToast={addToast}
-      />
-
-      <WebhookModal
-        isOpen={isWebhookOpen}
-        onClose={() => setIsWebhookOpen(false)}
-        vendor={currentVendor}
-        products={vendorProducts}
-        config={config}
-        onUpdateConfig={handleSaveConfig}
-        onTriggerWebhook={handleApplyChanges}
-        isDispatching={isDispatchingWebhook}
-        webhookLogs={webhookLogs}
       />
 
       <StoreConfigModal

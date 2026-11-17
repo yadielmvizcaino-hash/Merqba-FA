@@ -12,7 +12,6 @@ interface HeaderProps {
   onApplyChanges: () => void;
   onOpenVendorLogin: () => void;
   onOpenStoreConfig: () => void;
-  onOpenWebhookLogs?: () => void;
   lastSyncTime: string;
   isOnline?: boolean;
   isAuthenticated?: boolean;
@@ -41,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 bg-[#1F1712] border border-[#FF5A00]/30 text-[#FFA000] px-2 py-0.5 rounded text-[10px] uppercase font-bold tracking-wider">
               <span className={`w-1.5 h-1.5 rounded-full ${isOnline ? 'bg-[#10B981] animate-sync-pulse' : 'bg-[#F59E0B]'}`}></span>
-              Merqba FA • Marketplace
+              Merqba FA • Mi Tienda
             </span>
 
             {/* Online / Offline status badge */}
@@ -56,11 +55,6 @@ export const Header: React.FC<HeaderProps> = ({
                 Modo Offline • Guardado local activo
               </span>
             )}
-
-            <span className="text-slate-600 hidden sm:inline">|</span>
-            <span className="text-slate-400 hidden sm:inline truncate max-w-[220px]">
-              {config.storeUrl.replace(/^https?:\/\//, '')}
-            </span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -127,7 +121,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenStoreConfig}
             className="p-2 text-slate-300 hover:text-white hover:bg-[#1C222E] rounded-lg transition-colors cursor-pointer border border-[#273142] h-10 w-10 flex items-center justify-center shrink-0 bg-[#121620]"
-            title="Configuración de Merqba y Webhook"
+            title="Configuración de Tienda y Tasa"
             aria-label="Configurar tienda"
           >
             <Settings className="w-5 h-5 text-slate-300" />
@@ -153,7 +147,7 @@ export const Header: React.FC<HeaderProps> = ({
                 ? 'bg-gradient-to-r from-[#FF5A00] to-[#FFA000] ring-2 ring-[#FFA000]/60 active:scale-[0.98]'
                 : 'bg-gradient-to-r from-[#FF5A00] to-[#FF8C00] active:scale-[0.98]'
             } disabled:opacity-60`}
-            title="Aplicar cambios y disparar webhook con datos de todos los productos"
+            title="Guardar y sincronizar todos los cambios de productos en tu tienda"
           >
             <Send className={`w-4 h-4 ${isDispatchingWebhook ? 'animate-bounce' : ''}`} />
             <span className="font-extrabold">Aplicar Cambios</span>

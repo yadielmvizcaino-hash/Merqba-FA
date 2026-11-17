@@ -15,7 +15,7 @@ const app = express();
 const args = process.argv.slice(2);
 const portArgIndex = args.indexOf('--port');
 const portFromArgs = portArgIndex !== -1 && args[portArgIndex + 1] ? parseInt(args[portArgIndex + 1], 10) : null;
-const PORT = portFromArgs || 3000;
+const PORT = portFromArgs || Number(process.env.DEFAULT_APP_PORT) || 3000;
 
 // Ensure public/uploads directory exists for resilient media persistence
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
@@ -351,9 +351,13 @@ const knownVendors: Record<number, any> = {
 // Dynamically fetch all live Dokan stores from WordPress API to populate stores
 async function fetchAllDokanVendors(): Promise<Record<number, any>> {
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
     const res = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/stores?per_page=100`, {
       headers: { 'User-Agent': 'MerqbaFA/1.0', Accept: 'application/json' },
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
     if (res.ok) {
       const stores = await res.json();
       if (Array.isArray(stores)) {
@@ -385,9 +389,6 @@ async function fetchAllDokanVendors(): Promise<Record<number, any>> {
   }
   return knownVendors;
 }
-
-// Initial async load of stores
-fetchAllDokanVendors();
 
 // 1. Connection Status API (Public to app, hides keys)
 app.get('/api/woocommerce/status', (req, res) => {
@@ -637,14 +638,14 @@ app.post('/api/woocommerce/login', async (req, res) => {
     return res.json({
       success: true,
       sessionToken: sessionId,
-      message: `Contraseña verificada con éxito en WooCommerce para ${cleanUser}`,
+      message: `Contraseña verificada con éxito para ${cleanUser}`,
       vendor: matchedVendor,
     });
   } catch (err: any) {
     console.error('Login endpoint error:', err);
     return res.status(500).json({
       success: false,
-      message: 'Ocurrió un error al contactar al servidor de WooCommerce. Inténtalo nuevamente.',
+      message: 'Ocurrió un error al contactar al servidor de Merqba. Inténtalo nuevamente.',
     });
   }
 });
@@ -966,7 +967,7 @@ app.post('/api/woocommerce/upload-image', async (req, res) => {
       id: uploadedMediaId,
       uploadMethod,
       message: uploadMethod === 'wordpress_xmlrpc'
-        ? 'Imagen guardada directamente en la base de datos de medios de WordPress'
+        ? 'Imagen guardada correctamente en tu tienda'
         : 'Imagen procesada y asignada al producto',
     });
   } catch (err: any) {
@@ -1130,7 +1131,7 @@ app.post('/api/woocommerce/batch', async (req, res) => {
         success: true,
         statusCode: 200,
         savedToWooCommerce: true,
-        message: `${successCount} productos actualizados con éxito en WooCommerce.`,
+        message: `${successCount} productos actualizados con éxito en tu tienda.`,
         data: responseData,
       });
     } else {
@@ -1275,7 +1276,7 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
       savedToWooCommerce: saved,
       data: responseBody,
       message: saved
-        ? `Producto #${productId} actualizado con éxito en WooCommerce.`
+        ? `Producto #${productId} actualizado con éxito en tu tienda.`
         : `Producto #${productId} guardado localmente.`,
     });
   } catch (err: any) {
@@ -1390,7 +1391,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
           category: createdWcProduct.categories?.[0]?.name || newProductData.category || 'General',
           lastModified: new Date().toISOString(),
         },
-        message: 'Producto creado exitosamente en WooCommerce',
+        message: 'Producto creado exitosamente en tu tienda',
       });
     }
 
@@ -1474,7 +1475,7 @@ app.delete('/api/woocommerce/products/:id', async (req, res) => {
     return res.json({
       success: true,
       statusCode: response.status,
-      message: response.ok ? `Producto #${id} eliminado en WooCommerce` : `Eliminado localmente (código ${response.status})`,
+      message: response.ok ? `Producto #${id} eliminado de tu tienda` : `Eliminado localmente (código ${response.status})`,
     });
   } catch (err: any) {
     return res.json({
@@ -1514,7 +1515,7 @@ app.post('/api/webhook/dispatch', async (req, res) => {
       success: response.ok,
       statusCode: response.status,
       latencyMs,
-      message: response.ok ? `Webhook aceptado por ${webhookUrl}` : `Endpoint respondió con ${response.status}`,
+      message: response.ok ? `Sincronización completada con tu tienda` : `El servidor respondió con código ${response.status}`,
     });
   } catch (err: any) {
     const latencyMs = Math.round(performance.now() - startTime) || 35;
@@ -1653,7 +1654,7 @@ async function getVendorRateFromWordPress(session: ActiveSession): Promise<Vendo
       rate: null,
       minRate: foxMin,
       configured: false,
-      message: 'Error de conexión con WordPress al consultar la tasa.',
+      message: 'Error de conexión al consultar la tasa.',
     };
   }
 }
@@ -1700,7 +1701,7 @@ async function updateVendorRateInWordPress(session: ActiveSession, newRate: numb
     const resJson = await response.json().catch(() => null);
 
     if (!response.ok || (resJson && resJson.success === false)) {
-      const errMsg = resJson?.message || `WordPress rechazó la actualización con código HTTP ${response.status}`;
+      const errMsg = resJson?.message || `No se pudo actualizar la tasa (código HTTP ${response.status})`;
       return {
         success: false,
         rate: null,
@@ -1721,19 +1722,19 @@ async function updateVendorRateInWordPress(session: ActiveSession, newRate: numb
       success: true,
       rate: confirmedRate,
       minRate: confirmedMin,
-      message: resJson?.message || `Tasa de cambio de ${confirmedRate} CUP/USD guardada y confirmada exitosamente en WordPress.`,
+      message: resJson?.message || `Tasa de cambio de ${confirmedRate} CUP/USD guardada y confirmada exitosamente.`,
     };
   } catch (err: any) {
     return {
       success: false,
       rate: null,
       minRate: await getFoxMinRate(),
-      message: 'Error de red al intentar guardar la tasa en WordPress: ' + err.message,
+      message: 'Error de conexión al intentar guardar la tasa: ' + err.message,
     };
   }
 }
 
-// 5a. GET /api/vendor/exchange-rate - Query current individual rate and FOX minimum
+// 5a. GET /api/vendor/exchange-rate - Query current individual rate and minimum
 app.get('/api/vendor/exchange-rate', async (req, res) => {
   // Security Rule 1 & 7: Determine vendor ID exclusively from authenticated session
   const session = getSessionFromRequest(req);
@@ -1758,11 +1759,9 @@ app.get('/api/vendor/exchange-rate', async (req, res) => {
       minRate: rateData.minRate,
       currentRate: rateData.rate,
       hasConfiguredRate: rateData.configured,
-      metaKey: '_merqba_usd_cup_rate',
-      endpoint: MERQBA_VENDOR_RATE_ENDPOINT,
       currencyFrom: 'USD',
       currencyTo: 'CUP',
-      message: rateData.message || 'Tasa consultada correctamente desde WordPress.',
+      message: rateData.message || 'Tasa consultada correctamente.',
     });
   } catch (err: any) {
     console.error('Error fetching vendor exchange rate:', err);
@@ -1810,12 +1809,12 @@ app.post('/api/vendor/exchange-rate', async (req, res) => {
     if (minRate === null || isNaN(minRate) || minRate <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'No se pudo obtener la tasa mínima permitida de FOX/WordPress. No es posible validar o guardar la tasa en este momento.',
+        message: 'No se pudo obtener la tasa mínima permitida. No es posible validar o guardar la tasa en este momento.',
         minRate: null,
       });
     }
 
-    // 2. Server-side validation against PHP / FOX minimum rate
+    // 2. Server-side validation against minimum rate
     if (parsedRate < minRate) {
       return res.status(400).json({
         success: false,
@@ -1824,7 +1823,7 @@ app.post('/api/vendor/exchange-rate', async (req, res) => {
       });
     }
 
-    // 3. Save to WordPress (POST /wp-json/merqba/v1/vendor-rate with { "rate": "450" })
+    // 3. Save to WordPress
     const saveResult = await updateVendorRateInWordPress(session, parsedRate);
 
     if (!saveResult.success) {
@@ -1839,7 +1838,7 @@ app.post('/api/vendor/exchange-rate', async (req, res) => {
 
     return res.json({
       success: true,
-      message: saveResult.message || `Tasa de cambio de ${saveResult.rate} CUP/USD guardada y confirmada exitosamente en WordPress para ${vendorInfo.storeName}.`,
+      message: saveResult.message || `Tasa de cambio de ${saveResult.rate} CUP/USD guardada y confirmada exitosamente para ${vendorInfo.storeName}.`,
       vendorId: session.vendorId,
       rate: saveResult.rate,
       minRate: saveResult.minRate || minRate,
@@ -1874,7 +1873,12 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[Merqba FA] Server running on http://0.0.0.0:${PORT} connecting to ${WC_STORE_URL}`);
+    // Load live Dokan stores in background after server port is bound
+    fetchAllDokanVendors().catch(() => {});
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('[Merqba FA] Fatal error starting server:', err);
+  process.exit(1);
+});

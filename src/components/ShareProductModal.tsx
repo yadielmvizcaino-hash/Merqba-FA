@@ -5,7 +5,6 @@ import {
   Copy,
   Check,
   Send,
-  ExternalLink,
   MessageCircle,
   Smartphone,
   FileText,
@@ -301,15 +300,6 @@ export const ShareProductModal: React.FC<ShareProductModalProps> = ({
                 {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                 <span>{copiedLink ? 'Copiado' : 'Enlace'}</span>
               </button>
-              <a
-                href={productUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="p-2 border border-[#CBD5E1] hover:border-[#FF5A00] text-[#475569] hover:text-[#EA580C] hover:bg-[#FFF7ED] rounded-lg transition-colors cursor-pointer shrink-0"
-                title="Abrir enlace en la tienda"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
             </div>
           </div>
         </div>

@@ -68,7 +68,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
             const data = await res.json();
             if (data.success && data.url) {
               setImageUrl(data.url);
-              setUploadSuccessMsg('Guardada en base de datos de WordPress');
+              setUploadSuccessMsg('Imagen guardada correctamente');
             }
           } catch (err) {
             console.warn('Image upload fallback notice:', err);
@@ -351,9 +351,9 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <label className="block text-xs font-bold text-[#0F172A]">
-                Imagen del Producto (URL Directa para WooCommerce)
+                Imagen del Producto
               </label>
-              <span className="text-[10px] text-[#64748B]">Requiere enlace .jpg / .png</span>
+              <span className="text-[10px] text-[#64748B]">Sube una foto o pega un enlace</span>
             </div>
 
             <div className="flex items-start gap-3">
@@ -381,7 +381,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
               <div className="flex-1 space-y-2">
                 <input
                   type="url"
-                  placeholder="https://ejemplo.com/foto-producto.jpg"
+                  placeholder="Enlace directo de la foto (opcional)"
                   value={imageUrl.startsWith('data:') ? '' : imageUrl}
                   onChange={(e) => setImageUrl(e.target.value)}
                   disabled={isSubmitting || isUploadingImage}
@@ -442,12 +442,12 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
                     {isUploadingImage ? (
                       <>
                         <Loader2 className="w-3 h-3 text-[#FF5A00] animate-spin" />
-                        <span>Subiendo a WordPress...</span>
+                        <span>Subiendo imagen...</span>
                       </>
                     ) : (
                       <>
                         <Upload className="w-3 h-3 text-[#FF5A00]" />
-                        <span>Cargar desde galería (WordPress)</span>
+                        <span>Cargar desde galería</span>
                       </>
                     )}
                   </button>
@@ -496,7 +496,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Creando en WooCommerce...</span>
+                  <span>Creando producto...</span>
                 </>
               ) : (
                 <>

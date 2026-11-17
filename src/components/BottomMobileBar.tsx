@@ -52,7 +52,7 @@ export const BottomMobileBar: React.FC<BottomMobileBarProps> = ({
           <span className="hidden xs:inline text-[11px]">CSV</span>
         </button>
 
-        {/* Action Button: Disparar Webhook / Aplicar Cambios */}
+        {/* Action Button: Aplicar Cambios */}
         <button
           onClick={onApplyChanges}
           disabled={isDispatching}

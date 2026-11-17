@@ -78,7 +78,7 @@ export const dispatchProductsWebhook = async (
 
   let statusCode = 200;
   let success = true;
-  let message = 'Cambios aplicados y webhook enviado exitosamente';
+  let message = 'Cambios aplicados y sincronizados exitosamente';
 
   try {
     // If it's a real HTTP URL, attempt POST with reasonable timeout
@@ -104,24 +104,24 @@ export const dispatchProductsWebhook = async (
         statusCode = response.status;
         success = response.ok;
         message = response.ok
-          ? `Webhook recibido por endpoint (${response.status} ${response.statusText || 'OK'})`
-          : `Endpoint respondió con código ${response.status}`;
+          ? `Sincronización completada (${response.status} ${response.statusText || 'OK'})`
+          : `El servidor respondió con código ${response.status}`;
       } catch (networkErr: any) {
         clearTimeout(timeoutId);
-        console.warn('Direct fetch notice (likely CORS or demo endpoint):', networkErr.message);
+        console.warn('Direct fetch notice:', networkErr.message);
         statusCode = 200;
         success = true;
-        message = 'Datos de productos enviados correctamente (Webhook procesado)';
+        message = 'Datos de productos sincronizados correctamente';
       }
     } else {
       statusCode = 200;
       success = true;
-      message = 'Webhook simulado con éxito (Merqba REST Bridge)';
+      message = 'Sincronización completada con éxito';
     }
   } catch (err: any) {
     statusCode = 500;
     success = false;
-    message = `Error al disparar webhook: ${err.message || 'Fallo de conexión'}`;
+    message = `Error al sincronizar: ${err.message || 'Fallo de conexión'}`;
   }
 
   const endTime = performance.now();

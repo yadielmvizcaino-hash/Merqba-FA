@@ -32,25 +32,14 @@ interface StoreConfigModalProps {
 export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   isOpen,
   onClose,
-  config,
   currentVendor,
   isAuthenticated = false,
-  onSaveConfig,
   onLogout,
   onOpenVendorLogin,
   onShowToast,
 }) => {
   // Tabs state: 'exchange-rate' (New Section) vs 'general'
   const [activeTab, setActiveTab] = useState<'exchange-rate' | 'general'>('exchange-rate');
-
-  // General settings state
-  const [webhookUrl, setWebhookUrl] = useState(config.webhookUrl);
-
-  useEffect(() => {
-    if (isOpen) {
-      setWebhookUrl(config.webhookUrl);
-    }
-  }, [isOpen, config.webhookUrl]);
 
   // Exchange rate state
   const [isLoadingRate, setIsLoadingRate] = useState(false);
@@ -86,7 +75,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
     return headers;
   };
 
-  // Fetch exchange rate from server (WordPress & FOX)
+  // Fetch exchange rate from server
   const fetchExchangeRate = useCallback(async () => {
     setIsLoadingRate(true);
     setRateError(null);
@@ -120,10 +109,10 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
           setInputRate(String(fetchedMin));
         }
       } else {
-        setRateError(data.message || 'No se pudo consultar la tasa de cambio desde WordPress.');
+        setRateError(data.message || 'No se pudo consultar tu tasa de cambio.');
       }
     } catch (err: any) {
-      setRateError('Error de conexión al consultar la tasa de cambio con WordPress.');
+      setRateError('Error de conexión al consultar la tasa de cambio.');
     } finally {
       setIsLoadingRate(false);
     }
@@ -151,13 +140,13 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
     }
 
     if (minRate === null) {
-      setRateError('FOX / WordPress no ha devuelto una tasa mínima permitida válida. Reintenta la consulta.');
+      setRateError('No se pudo obtener la tasa mínima permitida. Reintenta la consulta.');
       return;
     }
 
     if (minRate && parsed < minRate) {
       setRateError(
-        `La tasa introducida (${parsed} CUP) no puede ser inferior a la tasa mínima global de Merqba en FOX (${minRate} CUP). Por favor ingresa ${minRate} o un valor mayor.`
+        `La tasa introducida (${parsed} CUP) no puede ser inferior a la tasa mínima permitida en Merqba (${minRate} CUP). Por favor ingresa ${minRate} o un valor mayor.`
       );
       return;
     }
@@ -187,33 +176,23 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
           setMinRate(data.minRate);
         }
         setRateSuccess(
-          data.message || `¡Tasa de cambio de ${data.rate} CUP/USD guardada exitosamente en WordPress!`
+          data.message || `¡Tasa de cambio de ${data.rate} CUP/USD guardada exitosamente!`
         );
         if (onShowToast) {
           onShowToast(
             'success',
             'Tasa de Cambio Guardada',
-            `Tu tasa individual de ${data.rate} CUP/USD fue actualizada y confirmada por WordPress.`
+            `Tu tasa individual de ${data.rate} CUP/USD fue actualizada correctamente.`
           );
         }
       } else {
-        setRateError(data.message || 'Error al guardar la tasa de cambio en el servidor.');
+        setRateError(data.message || 'Error al guardar la tasa de cambio.');
       }
     } catch (err: any) {
-      setRateError('Error de red al comunicar con el servidor de WooCommerce/WordPress.');
+      setRateError('Error de conexión al guardar la tasa de cambio.');
     } finally {
       setIsSavingRate(false);
     }
-  };
-
-  // Handle General Store Config submit
-  const handleGeneralSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSaveConfig({
-      ...config,
-      webhookUrl: webhookUrl.trim() || config.webhookUrl,
-    });
-    onClose();
   };
 
   if (!isOpen) return null;
@@ -271,7 +250,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             }`}
           >
             <Settings className="w-4 h-4" />
-            <span>Tienda y Webhook</span>
+            <span>Mi Cuenta y Tienda</span>
           </button>
         </div>
 
@@ -284,7 +263,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
               <div className="flex items-center justify-between bg-[#F8FAFC] border border-[#E2E8F0] p-3 rounded-xl">
                 <div className="min-w-0">
                   <span className="text-[10px] uppercase font-bold text-[#64748B] block tracking-wider">
-                    Vendedor Autenticado (Dokan)
+                    Vendedor Autenticado
                   </span>
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="font-extrabold text-xs text-[#0F172A] truncate">
@@ -303,7 +282,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                   onClick={fetchExchangeRate}
                   disabled={isLoadingRate || isSavingRate}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 border border-[#CBD5E1] text-[#334155] rounded-lg text-xs font-semibold shadow-2xs transition-colors cursor-pointer disabled:opacity-50"
-                  title="Refrescar tasa de cambio desde WordPress y FOX"
+                  title="Refrescar tasa de cambio"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 text-[#FF5A00] ${isLoadingRate ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">Refrescar</span>
@@ -315,21 +294,21 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                 <div className="py-8 text-center space-y-2">
                   <Loader2 className="w-7 h-7 text-[#FF5A00] animate-spin mx-auto" />
                   <p className="text-xs text-[#64748B] font-medium">
-                    Consultando tasa en WordPress y FOX Currency Switcher...
+                    Consultando tasa de cambio actual...
                   </p>
                 </div>
               ) : (
                 <form onSubmit={handleSaveRate} className="space-y-4">
-                  {/* Two Cards Row: Min FOX rate vs Current Individual Rate */}
+                  {/* Two Cards Row: Min rate vs Current Individual Rate */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {/* Minimum Rate from FOX Card */}
+                    {/* Minimum Rate Card */}
                     <div className="bg-[#EFF6FF] border border-[#BFDBFE] p-3.5 rounded-xl space-y-1.5">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-[#1E40AF]">
                           Tasa Mínima Global
                         </span>
                         <span className="text-[9px] font-extrabold bg-[#DBEAFE] text-[#1D4ED8] px-1.5 py-0.2 rounded">
-                          FOX (WOOCS)
+                          Merqba
                         </span>
                       </div>
                       <div className="flex items-baseline gap-1">
@@ -390,19 +369,19 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                         }`}
                       >
                         {hasConfiguredRate && currentRate
-                          ? 'Guardada en WordPress en `user_meta: _merqba_usd_cup_rate`.'
+                          ? 'Tu tasa personalizada está activa y guardada en tu tienda.'
                           : `Tu tienda aplica la tasa estándar (${minRate !== null ? minRate + ' CUP' : 'del administrador'}) hasta que configures una tasa.`}
                       </p>
                     </div>
                   </div>
 
-                  {/* State H Notice: Missing FOX / WP Minimum Rate */}
+                  {/* Notice: Missing Minimum Rate */}
                   {minRate === null && !isLoadingRate && !authError && (
                     <div className="p-3 bg-[#FFFBEB] border border-[#FDE68A] rounded-xl flex items-center justify-between gap-2.5 text-xs text-[#92400E] animate-fade-in">
                       <div className="flex items-start gap-2">
                         <AlertCircle className="w-4 h-4 text-[#D97706] shrink-0 mt-0.5" />
                         <div>
-                          <p className="font-bold">FOX / WordPress no ha devuelto una tasa mínima permitida válida.</p>
+                          <p className="font-bold">No se pudo obtener una tasa mínima permitida válida.</p>
                           <p className="text-[11px] text-[#B45309]">No es posible guardar una tasa sin validar el mínimo. Reintenta la consulta.</p>
                         </div>
                       </div>
@@ -522,7 +501,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                     <div className="flex items-start gap-1.5 text-[11px] text-[#64748B] pt-1">
                       <Info className="w-3.5 h-3.5 text-[#3B82F6] shrink-0 mt-0.5" />
                       <span>
-                        Se comunica mediante <code className="bg-slate-100 px-1 py-0.5 rounded text-[#0F172A] font-mono text-[10px]">/wp-json/merqba/v1/vendor-rate</code> y se almacena en el metadato <code className="bg-slate-100 px-1 py-0.5 rounded text-[#0F172A] font-mono text-[10px]">_merqba_usd_cup_rate</code> de WordPress.
+                        Esta tasa se aplicará automáticamente para convertir los precios de los productos de tu tienda.
                       </span>
                     </div>
                   </div>
@@ -569,7 +548,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                       {isSavingRate ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Guardando en WordPress...</span>
+                          <span>Guardando tasa...</span>
                         </>
                       ) : (
                         <>
@@ -584,9 +563,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
             </div>
           )}
 
-          {/* TAB 2: TIENDA Y WEBHOOK (GENERAL) */}
+          {/* TAB 2: MI CUENTA Y TIENDA */}
           {activeTab === 'general' && (
-            <form onSubmit={handleGeneralSubmit} className="space-y-4">
+            <div className="space-y-4">
               {/* Pre-configured Verified Store Card */}
               <div className="p-3.5 bg-[#F0FDF4] border border-[#86EFAC] rounded-xl space-y-2">
                 <div className="flex items-center justify-between">
@@ -595,36 +574,19 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                     <span>Tienda Vinculada y Protegida</span>
                   </div>
                   <span className="text-[10px] font-bold bg-[#DCFCE7] text-[#15803D] px-2 py-0.5 rounded-full border border-[#BBF7D0]">
-                    API Conectada
+                    En Línea
                   </span>
                 </div>
 
                 <div className="text-xs text-[#166534] space-y-1">
-                  <div className="flex items-center gap-1.5 font-mono">
+                  <div className="flex items-center gap-1.5 font-semibold">
                     <Link2 className="w-3.5 h-3.5 text-[#16A34A]" />
-                    <span className="font-bold">https://merqba.com</span>
+                    <span>{currentVendor ? currentVendor.storeName : 'Tienda Merqba'}</span>
                   </div>
                   <p className="text-[11px] text-[#15803D]">
-                    Credenciales aplicadas de forma segura en el servidor.
+                    Tu cuenta y catálogo están sincronizados de forma segura.
                   </p>
                 </div>
-              </div>
-
-              {/* Webhook Endpoint */}
-              <div>
-                <label className="block text-xs font-bold text-[#0F172A] mb-1">
-                  Endpoint del Webhook (Receptor de datos)
-                </label>
-                <input
-                  type="text"
-                  value={webhookUrl}
-                  onChange={(e) => setWebhookUrl(e.target.value)}
-                  placeholder="https://merqba.com/wp-json/merqba/v1/sync"
-                  className="w-full px-3 py-2.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-xl text-xs font-mono text-[#0F172A] focus:outline-none focus:border-[#FF5A00] focus:ring-1 focus:ring-[#FF5A00]/25"
-                />
-                <p className="text-[11px] text-[#64748B] mt-1">
-                  Receptor al que se disparan las actualizaciones de stock y precios al pulsar &apos;Aplicar Cambios&apos;.
-                </p>
               </div>
 
               {/* Account Management & Disconnect / Logout buttons */}
@@ -667,15 +629,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                 >
                   Cerrar
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-gradient-to-r from-[#FF5A00] to-[#FFA000] hover:from-[#E64C00] hover:to-[#E68A00] text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Check className="w-4 h-4" />
-                  <span>Guardar Webhook</span>
-                </button>
               </div>
-            </form>
+            </div>
           )}
         </div>
       </div>
