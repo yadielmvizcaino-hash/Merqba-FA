@@ -13,6 +13,14 @@ import {
   Loader2,
   TrendingUp,
   Info,
+  LayoutDashboard,
+  Truck,
+  ShoppingBag,
+  Wallet,
+  CreditCard,
+  Store,
+  Banknote,
+  ChevronRight,
 } from 'lucide-react';
 import { StoreConfig, DokanVendor } from '../types';
 
@@ -586,6 +594,71 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
                   <p className="text-[11px] text-[#15803D]">
                     Tu cuenta y catálogo están sincronizados de forma segura.
                   </p>
+                </div>
+              </div>
+
+              {/* Vendor Administration Panel Quick Links */}
+              <div className="pt-3 border-t border-[#E2E8F0] space-y-2">
+                <span className="block text-xs font-bold text-[#0F172A] uppercase tracking-wider">
+                  Panel de Administración de la Tienda
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {[
+                    {
+                      label: 'Escritorio del vendedor',
+                      url: 'https://merqba.com/dashboard/',
+                      icon: LayoutDashboard,
+                    },
+                    {
+                      label: 'Tarifas de envíos',
+                      url: 'https://merqba.com/dashboard/shipping-cities/',
+                      icon: Truck,
+                    },
+                    {
+                      label: 'Pedidos',
+                      url: 'https://merqba.com/dashboard/new/#orders',
+                      icon: ShoppingBag,
+                    },
+                    {
+                      label: 'Retirada de saldo',
+                      url: 'https://merqba.com/dashboard/new/#withdraw',
+                      icon: Wallet,
+                    },
+                    {
+                      label: 'Suscripción',
+                      url: 'https://merqba.com/dashboard/new/#reverse-withdrawal',
+                      icon: CreditCard,
+                    },
+                    {
+                      label: 'Ajustes de tienda',
+                      url: 'https://merqba.com/dashboard/new/#settings/store/',
+                      icon: Store,
+                    },
+                    {
+                      label: 'Ajustes de pago',
+                      url: 'https://merqba.com/dashboard/settings/payment/',
+                      icon: Banknote,
+                    },
+                  ].map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <a
+                        key={item.url}
+                        href={item.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center justify-between gap-2 px-3 py-2.5 bg-[#F8FAFC] hover:bg-[#FFF7ED] border border-[#E2E8F0] hover:border-[#FDBA74] rounded-xl text-xs font-semibold text-[#0F172A] hover:text-[#C2410C] transition-colors group"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className="p-1.5 rounded-lg bg-white border border-[#E2E8F0] group-hover:border-[#FED7AA] text-[#FF5A00] shrink-0">
+                            <Icon className="w-3.5 h-3.5" />
+                          </div>
+                          <span className="truncate">{item.label}</span>
+                        </div>
+                        <ChevronRight className="w-3.5 h-3.5 text-[#94A3B8] group-hover:text-[#FF5A00] shrink-0 transition-transform group-hover:translate-x-0.5" />
+                      </a>
+                    );
+                  })}
                 </div>
               </div>
 
