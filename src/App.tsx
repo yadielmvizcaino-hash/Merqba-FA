@@ -31,6 +31,7 @@ import { StoreConfigModal } from './components/StoreConfigModal';
 import { BulkEditModal, BulkEditChanges } from './components/BulkEditModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { BottomMobileBar } from './components/BottomMobileBar';
+import { GuidedTour } from './components/GuidedTour';
 import { exportProductsToCsv } from './services/csvExport';
 import {
   Download,
@@ -99,6 +100,7 @@ export default function App() {
   const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [isDeletingProduct, setIsDeletingProduct] = useState(false);
+  const [isTourOpen, setIsTourOpen] = useState(false);
 
   // Notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -142,11 +144,36 @@ export default function App() {
     };
   }, []);
 
-  // Initialize data on mount: do not load products if not authenticated
+  // Initialize data on mount: verify live server session & do not keep dead auth state
   useEffect(() => {
     if (hasAuthCookie) {
       const loadedProducts = getStoredProducts();
       setProducts(loadedProducts);
+
+      const token =
+        sessionStorage.getItem('merqba_session_token') ||
+        localStorage.getItem('merqba_session_token');
+      const headers: Record<string, string> = {};
+      if (token) headers['x-session-token'] = token;
+
+      fetch('/api/woocommerce/status', { headers, credentials: 'include' })
+        .then((r) => r.json())
+        .then((status) => {
+          if (status && status.isAuthenticated === false) {
+            document.cookie = 'merqba_auth=; path=/; max-age=0';
+            document.cookie = 'merqba_vendor_id=; path=/; max-age=0';
+            sessionStorage.removeItem('merqba_session_token');
+            localStorage.removeItem('merqba_session_token');
+            setIsAuthenticated(false);
+            setIsLoginOpen(true);
+            addToast(
+              'info',
+              'Sesión Expirada',
+              'Por seguridad, vuelve a iniciar sesión para guardar cambios en tu tienda.'
+            );
+          }
+        })
+        .catch(() => {});
     } else {
       setProducts([]);
     }
@@ -166,6 +193,31 @@ export default function App() {
       saveStoredProducts(products);
     }
   }, [products, isAuthenticated]);
+
+  // First-login automatic onboarding tour
+  useEffect(() => {
+    if (!isAuthenticated || isLoginOpen || isSyncing) return;
+    try {
+      const tourDone = localStorage.getItem('merqba_onboarding_tour_done_v1');
+      if (!tourDone) {
+        const timer = setTimeout(() => {
+          setIsTourOpen(true);
+        }, 450);
+        return () => clearTimeout(timer);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, [isAuthenticated, isLoginOpen, isSyncing]);
+
+  const handleCloseTour = () => {
+    setIsTourOpen(false);
+    try {
+      localStorage.setItem('merqba_onboarding_tour_done_v1', 'true');
+    } catch {
+      // ignore storage errors
+    }
+  };
 
   // Current logged in vendor
   const currentVendor = useMemo(() => {
@@ -316,6 +368,9 @@ export default function App() {
           if (changes.priceMode === 'fixed') {
             newPrice = changes.priceValue;
             newRegular = changes.priceValue;
+            if (!changes.updateSalePrice) {
+              newSale = undefined;
+            }
           } else if (changes.priceMode === 'percent_increase') {
             newPrice = Math.round(p.price * (1 + changes.priceValue / 100) * 100) / 100;
             newRegular = Math.round(p.regularPrice * (1 + changes.priceValue / 100) * 100) / 100;
@@ -406,7 +461,9 @@ export default function App() {
 
   // Helper to obtain authenticated session headers
   const getAuthHeaders = (): Record<string, string> => {
-    const token = sessionStorage.getItem('merqba_session_token');
+    const token =
+      sessionStorage.getItem('merqba_session_token') ||
+      localStorage.getItem('merqba_session_token');
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) {
       headers['x-session-token'] = token;
@@ -423,9 +480,9 @@ export default function App() {
       prev.map((item) => (item.id === updated.id ? updated : item))
     );
 
-    // 2. Persist single product (price, regularPrice, stock, name) immediately to WooCommerce REST API
+    // 2. Persist single product (price, regularPrice, salePrice, stock, name) immediately to the store
     try {
-      fetch(`/api/woocommerce/products/${updated.id}`, {
+      const res = await fetch(`/api/woocommerce/products/${updated.id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         credentials: 'include',
@@ -433,36 +490,60 @@ export default function App() {
           name: updated.name,
           price: updated.price,
           regularPrice: updated.regularPrice !== undefined ? updated.regularPrice : updated.price,
-          salePrice: updated.salePrice,
+          salePrice: updated.salePrice !== undefined ? updated.salePrice : null,
           stockStatus: updated.stockStatus,
           stockQuantity: updated.stockQuantity,
           imageUrl: updated.imageUrl,
           sku: updated.sku,
           category: updated.category,
         }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data && data.savedToWooCommerce) {
-            setProducts((prev) =>
-              prev.map((item) => (item.id === updated.id ? { ...item, isModifiedLocally: false } : item))
-            );
-            addToast(
-              'success',
-              'Precio y Producto Actualizados',
-              `"${updated.name.slice(0, 25)}" actualizado en tu tienda (${config.currencySymbol}${updated.price.toFixed(2)}).`
-            );
-          } else {
-            addToast(
-              'info',
-              'Cambio Guardado Localmente',
-              `"${updated.name.slice(0, 25)}" guardado localmente. Pulsa "Aplicar Cambios" para sincronizar.`
-            );
-          }
-        })
-        .catch((e) => console.warn('Single product sync notice:', e));
+      });
+      const data = await res.json().catch(() => null);
+
+      if (res.status === 401 || data?.authRequired) {
+        addToast(
+          'error',
+          'Sesión Expirada',
+          'Vuelve a iniciar sesión para guardar el precio en tu tienda.'
+        );
+        setIsLoginOpen(true);
+        return;
+      }
+
+      if (res.ok && data && data.savedToWooCommerce) {
+        setProducts((prev) =>
+          prev.map((item) =>
+            item.id === updated.id
+              ? {
+                  ...item,
+                  price: data.price !== undefined ? data.price : item.price,
+                  regularPrice: data.regularPrice !== undefined ? data.regularPrice : item.regularPrice,
+                  salePrice: data.salePrice,
+                  isModifiedLocally: false,
+                }
+              : item
+          )
+        );
+        const confirmedPriceDisplay = data.price !== undefined ? data.price : updated.price;
+        addToast(
+          'success',
+          'Precio y Producto Actualizados',
+          `"${updated.name.slice(0, 25)}" actualizado en tu tienda (${config.currencySymbol}${Number(confirmedPriceDisplay).toFixed(2)}).`
+        );
+      } else {
+        addToast(
+          'error',
+          'No se pudo actualizar en la tienda',
+          data?.message || `"${updated.name.slice(0, 25)}" quedó pendiente localmente. Pulsa "Aplicar Cambios" para reintentar.`
+        );
+      }
     } catch (err) {
       console.warn('Product update notice:', err);
+      addToast(
+        'info',
+        'Cambio Guardado Localmente',
+        `"${updated.name.slice(0, 25)}" guardado localmente. Pulsa "Aplicar Cambios" para sincronizar.`
+      );
     }
 
     // 3. If realtime sync is active, trigger background sync after 600ms debounce
@@ -475,7 +556,6 @@ export default function App() {
         const currentVendorItems = currentProducts.filter((p) => p.vendorId === currentVendor.id);
         const result = await dispatchProductsWebhook(currentVendor, currentVendorItems, config, 'realtime_change');
         setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
-        addToast('info', 'Sincronización en Tiempo Real', `Actualización de "${updated.name.slice(0, 20)}..." aplicada.`);
       }, 600);
     }
   };
@@ -579,7 +659,7 @@ export default function App() {
 
     setIsDispatchingWebhook(true);
     try {
-      // 1. Dispatch batch changes to Merqba REST API proxy with authentication headers
+      // 1. Dispatch batch changes to store backend with authentication headers
       const batchRes = await fetch('/api/woocommerce/batch', {
         method: 'POST',
         headers: getAuthHeaders(),
@@ -588,7 +668,26 @@ export default function App() {
       });
       const batchData = await batchRes.json().catch(() => ({}));
 
-      // 2. Dispatch webhook payload
+      if (batchRes.status === 401) {
+        addToast(
+          'error',
+          'Sesión Expirada',
+          'Tu sesión caducó. Inicia sesión nuevamente para aplicar los cambios en la tienda.'
+        );
+        setIsLoginOpen(true);
+        return;
+      }
+
+      if (!batchRes.ok || !batchData.savedToWooCommerce) {
+        addToast(
+          'error',
+          'Error al Actualizar en Tienda',
+          batchData.message || 'No se pudieron guardar los cambios en la tienda. Inténtalo nuevamente.'
+        );
+        return;
+      }
+
+      // 2. Dispatch secondary sync log
       const result = await dispatchProductsWebhook(
         currentVendor,
         vendorProducts,
@@ -596,7 +695,7 @@ export default function App() {
         'manual_button'
       );
 
-      // Clear local modified flags for this vendor upon successful dispatch
+      // Clear local modified flags for this vendor ONLY when store save succeeded
       setProducts((prev) =>
         prev.map((p) => (p.vendorId === currentVendor.id ? { ...p, isModifiedLocally: false } : p))
       );
@@ -604,8 +703,8 @@ export default function App() {
       setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
 
       addToast(
-        batchRes.ok && result.success ? 'success' : 'info',
-        batchRes.ok ? '¡Cambios Guardados con Éxito!' : 'Cambios Aplicados',
+        'success',
+        '¡Cambios Guardados con Éxito!',
         batchData.message || `Cambios sincronizados (${targetProducts.length} productos actualizados)`
       );
     } catch (err: any) {
@@ -663,9 +762,17 @@ export default function App() {
 
   // Handle logout
   const handleLogout = () => {
+    fetch('/api/woocommerce/logout', { method: 'POST', headers: getAuthHeaders(), credentials: 'include' }).catch(() => {});
     document.cookie = 'merqba_auth=; path=/; max-age=0';
     document.cookie = 'merqba_vendor_id=; path=/; max-age=0';
-    localStorage.removeItem('merchant_pulse_products_v1');
+    sessionStorage.removeItem('merqba_session_token');
+    sessionStorage.removeItem('merqba_auth_user');
+    try {
+      localStorage.removeItem('merqba_session_token');
+      localStorage.removeItem('merchant_pulse_products_v1');
+    } catch {
+      // ignore
+    }
     setIsAuthenticated(false);
     setProducts([]);
     setIsLoginOpen(true);
@@ -774,6 +881,7 @@ export default function App() {
         onApplyChanges={handleApplyChanges}
         onOpenVendorLogin={() => setIsLoginOpen(true)}
         onOpenStoreConfig={() => setIsConfigOpen(true)}
+        onOpenTour={() => setIsTourOpen(true)}
         lastSyncTime={lastSyncTime}
         isOnline={isOnline}
         isAuthenticated={isAuthenticated}
@@ -811,7 +919,10 @@ export default function App() {
           {/* 4. Products List Canvas */}
           <main className="max-w-[2400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 w-full flex-1">
             {/* Selection & Results bar */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 mb-3.5">
+            <div
+              data-tour="bulk-create-bar"
+              className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 mb-3.5"
+            >
               <div className="flex items-center gap-2.5 flex-wrap">
                 {/* Master Select All Checkbox */}
                 <label className="flex items-center gap-2 cursor-pointer select-none text-xs font-bold text-[#0F172A] bg-white border border-[#CBD5E1] hover:border-[#FF5A00] px-3 py-1.5 rounded-lg transition-all shadow-2xs">
@@ -909,12 +1020,13 @@ export default function App() {
             {/* Product Cards Grid */}
             {displayProducts.length > 0 ? (
               <div className="grid grid-cols-1 xl:grid-cols-2 3xl:grid-cols-3 gap-3">
-                {displayProducts.map((product) => (
+                {displayProducts.map((product, index) => (
                   <ProductCard
                     key={product.id}
                     product={product}
                     config={config}
                     isSelected={selectedProductIds.includes(product.id)}
+                    isFirstTourTarget={index === 0}
                     onToggleSelect={handleToggleSelectProduct}
                     onSelectSamePrice={handleSelectSamePrice}
                     onUpdateProduct={handleUpdateProduct}
@@ -1090,7 +1202,14 @@ export default function App() {
         </div>
       )}
 
-      {/* 7. Toast Alerts */}
+      {/* 7. Onboarding Quick Tour */}
+      <GuidedTour
+        isOpen={isTourOpen}
+        onClose={handleCloseTour}
+        hasProducts={displayProducts.length > 0}
+      />
+
+      {/* 8. Toast Alerts */}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
   );

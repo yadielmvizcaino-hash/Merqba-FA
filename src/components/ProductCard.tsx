@@ -17,6 +17,7 @@ interface ProductCardProps {
   product: Product;
   config: StoreConfig;
   isSelected?: boolean;
+  isFirstTourTarget?: boolean;
   onToggleSelect?: (id: number) => void;
   onSelectSamePrice?: (price: number) => void;
   onUpdateProduct: (updated: Product) => void;
@@ -29,6 +30,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   product,
   config,
   isSelected = false,
+  isFirstTourTarget = false,
   onToggleSelect,
   onSelectSamePrice,
   onUpdateProduct,
@@ -77,11 +79,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   // Save price edit
   const handleSavePrice = () => {
     const parsed = parseFloat(tempPrice);
-    if (!isNaN(parsed) && parsed >= 0 && parsed !== product.price) {
+    if (!isNaN(parsed) && parsed >= 0 && (parsed !== product.price || product.salePrice !== undefined)) {
       onUpdateProduct({
         ...product,
         price: parsed,
         regularPrice: parsed,
+        salePrice: undefined,
         isModifiedLocally: true,
         lastModified: new Date().toISOString(),
       });
@@ -269,7 +272,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Main card row: optimized for Full HD+ (2400x1080) and dense mobile */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 w-full">
         {/* Left Cluster: Bulk Selection Checkbox + Photo thumbnail + (Title, ID/SKU badges, Price) */}
-        <div className="flex items-start gap-2.5 sm:gap-3 flex-1 min-w-0">
+        <div
+          data-tour={isFirstTourTarget ? 'first-product-info' : undefined}
+          className="flex items-start gap-2.5 sm:gap-3 flex-1 min-w-0"
+        >
           {/* Multi-select Checkbox for Mass Edit */}
           {onToggleSelect && (
             <div className="pt-1 shrink-0">
@@ -494,7 +500,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
 
         {/* Right Cluster: Quantity Stepper, Interruptor de Stock & Casilla de Stock */}
-        <div className="flex sm:flex-row lg:flex-row items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#F1F5F9] shrink-0">
+        <div
+          data-tour={isFirstTourTarget ? 'first-product-stock' : undefined}
+          className="flex sm:flex-row lg:flex-row items-center justify-between lg:justify-end gap-3 pt-2 lg:pt-0 border-t lg:border-t-0 border-[#F1F5F9] shrink-0"
+        >
           {/* Stock Stepper `[-]` `[input]` `[+]` */}
           <div className="flex flex-col items-start lg:items-end">
             <span className="text-[10px] font-semibold text-[#64748B] uppercase tracking-wider mb-0.5">

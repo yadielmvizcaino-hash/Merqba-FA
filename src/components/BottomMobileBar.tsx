@@ -54,6 +54,7 @@ export const BottomMobileBar: React.FC<BottomMobileBarProps> = ({
 
         {/* Action Button: Aplicar Cambios */}
         <button
+          data-tour="apply-changes-btn"
           onClick={onApplyChanges}
           disabled={isDispatching}
           className={`flex items-center justify-center gap-1.5 px-4 py-2 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer h-10 shrink-0 ${

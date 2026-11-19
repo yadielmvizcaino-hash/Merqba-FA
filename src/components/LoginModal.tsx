@@ -83,11 +83,16 @@ export const LoginModal: React.FC<LoginModalProps> = ({
 
         if (data.sessionToken) {
           sessionStorage.setItem('merqba_session_token', data.sessionToken);
+          try {
+            localStorage.setItem('merqba_session_token', data.sessionToken);
+          } catch {
+            // ignore
+          }
         }
 
-        // Set auth cookie
-        document.cookie = `merqba_auth=true; path=/; max-age=31536000`;
-        document.cookie = `merqba_vendor_id=${verifiedVendor.id}; path=/; max-age=31536000`;
+        // Set auth cookie matching 30-day server session
+        document.cookie = `merqba_auth=true; path=/; max-age=2592000`;
+        document.cookie = `merqba_vendor_id=${verifiedVendor.id}; path=/; max-age=2592000`;
         try {
           sessionStorage.setItem('merqba_auth_user', JSON.stringify({ username: targetUser }));
         } catch (e) {

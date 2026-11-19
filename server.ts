@@ -83,27 +83,24 @@ function cleanCookieHeader(rawCookies: string | string[] | undefined): string {
   if (!rawCookies) return '';
   const list = Array.isArray(rawCookies) ? rawCookies : [rawCookies];
   const map = new Map<string, string>();
+  const ignoredAttrs = new Set(['path', 'expires', 'max-age', 'domain', 'samesite', 'secure', 'httponly', 'priority']);
 
   for (const item of list) {
-    // Split on either semicolon or comma that precedes a cookie key
-    const parts = item.split(/;\s*|,\s*(?=[a-zA-Z0-9_%-]+=[^;]*)/);
-    for (const part of parts) {
-      const trimmed = part.trim();
-      const idx = trimmed.indexOf('=');
-      if (idx > 0) {
-        const k = trimmed.slice(0, idx).trim();
-        const v = trimmed.slice(idx + 1).trim();
-        const lower = k.toLowerCase();
-        if (
-          !lower.startsWith('path') &&
-          !lower.startsWith('expires') &&
-          !lower.startsWith('max-age') &&
-          !lower.startsWith('domain') &&
-          !lower.startsWith('samesite') &&
-          lower !== 'secure' &&
-          lower !== 'httponly'
-        ) {
-          map.set(k, v);
+    // Split on semicolons or commas (including commas after flags like "HttpOnly, wordpress_logged_in_...")
+    const parts = item.split(/;\s*/);
+    for (const rawPart of parts) {
+      // Handle comma-joined Set-Cookie values like "HttpOnly, wordpress_sec_xxx=yyy" or "Expires=Wed, 18 Nov..., wordpress_logged_in=zzz"
+      const subParts = rawPart.split(/,\s*(?=[a-zA-Z0-9_%-]+=)/);
+      for (const sub of subParts) {
+        const trimmed = sub.trim().replace(/^(?:HttpOnly|Secure|SameSite=\w+)\s*,\s*/i, '');
+        const idx = trimmed.indexOf('=');
+        if (idx > 0) {
+          const k = trimmed.slice(0, idx).trim();
+          const v = trimmed.slice(idx + 1).trim();
+          const lower = k.toLowerCase();
+          if (!ignoredAttrs.has(lower) && !k.includes(' ') && !k.includes(',')) {
+            map.set(k, v);
+          }
         }
       }
     }
@@ -112,33 +109,52 @@ function cleanCookieHeader(rawCookies: string | string[] | undefined): string {
   return Array.from(map.entries()).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
-// Helper to obtain complete authenticated headers for WooCommerce & Dokan REST calls
-async function getAuthenticatedHeaders(session: ActiveSession | null, forceRefreshNonce = false): Promise<Record<string, string>> {
+// Helper: Build HTTPS WooCommerce REST URL with consumer_key & consumer_secret query params
+// (Avoids WordPress intercepting `Authorization: Basic ck_...:cs_...` with 401 `invalid_username`)
+function buildWcApiUrl(endpointPath: string): string {
+  const base = `${WC_STORE_URL}${endpointPath.startsWith('/') ? '' : '/'}${endpointPath}`;
+  if (!WC_CONSUMER_KEY || !WC_CONSUMER_SECRET) return base;
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}consumer_key=${encodeURIComponent(WC_CONSUMER_KEY)}&consumer_secret=${encodeURIComponent(WC_CONSUMER_SECRET)}`;
+}
+
+// Helper: Clean Admin WooCommerce REST API headers ONLY (no Cookie / X-WP-Nonce / Basic header)
+function getWcAdminHeaders(): Record<string, string> | null {
+  if (!WC_CONSUMER_KEY || !WC_CONSUMER_SECRET) return null;
+  return {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'User-Agent': 'MerqbaFA/1.0',
+  };
+}
+
+// Helper: Vendor-authenticated WordPress/Dokan REST headers ONLY (Cookie + X-WP-Nonce, no admin Basic Auth)
+async function getVendorSessionHeaders(session: ActiveSession | null, forceRefreshNonce = false): Promise<Record<string, string> | null> {
+  if (!session) return null;
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'application/json',
     'User-Agent': 'MerqbaFA/1.0',
   };
 
-  const authHeader = getWcAuthHeader();
-  if (authHeader) {
-    headers['Authorization'] = authHeader;
-  }
-
-  if (session?.cookies) {
+  if (session.cookies) {
     const clean = cleanCookieHeader(session.cookies);
-    headers['Cookie'] = clean;
-    const nonce = await refreshSessionNonce(session, forceRefreshNonce);
-    if (nonce) {
-      headers['X-WP-Nonce'] = nonce;
+    if (clean) {
+      headers['Cookie'] = clean;
+      const nonce = await refreshSessionNonce(session, forceRefreshNonce);
+      if (nonce) {
+        headers['X-WP-Nonce'] = nonce;
+        return headers;
+      }
     }
   }
 
-  if (!authHeader && session?.username && session?.password) {
+  if (session.username && session.password) {
     headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
+    return headers;
   }
 
-  return headers;
+  return null;
 }
 
 // Fetch or refresh session wp_rest nonce from WordPress /mi-cuenta/
@@ -150,6 +166,7 @@ async function refreshSessionNonce(session: ActiveSession, force = false): Promi
   }
   try {
     const clean = cleanCookieHeader(session.cookies);
+    if (!clean) return undefined;
     const res = await fetch(`${WC_STORE_URL}/mi-cuenta/`, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
@@ -224,6 +241,7 @@ function getSessionFromRequest(req: express.Request): ActiveSession | null {
 
   if (Date.now() > session.expiresAt) {
     activeSessions.delete(sessionId);
+    saveSessionsToFile();
     return null;
   }
 
@@ -244,14 +262,6 @@ const escapeXml = (unsafe: string): string => {
       default: return c;
     }
   });
-};
-
-const getWcAuthHeader = () => {
-  if (!WC_CONSUMER_KEY || !WC_CONSUMER_SECRET) {
-    return '';
-  }
-  const token = Buffer.from(`${WC_CONSUMER_KEY}:${WC_CONSUMER_SECRET}`).toString('base64');
-  return `Basic ${token}`;
 };
 
 const knownVendors: Record<number, any> = {
@@ -422,14 +432,15 @@ app.post('/api/woocommerce/login', async (req, res) => {
     // 1. Direct Merqba Form Authentication via /mi-cuenta/
     let isWcSuccess = false;
     let wcErrorMessage: string | null = null;
-    let postCookies = '';
+    let postCookiesRaw: string | string[] = '';
 
     try {
       const initial = await fetch(`${WC_STORE_URL}/mi-cuenta/`, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
       });
       const html = await initial.text();
-      const cookies = initial.headers.get('set-cookie') || '';
+      const initialSetCookies = (initial.headers as any).getSetCookie?.() || initial.headers.get('set-cookie') || '';
+      const cookies = cleanCookieHeader(initialSetCookies);
       const nonceMatch = html.match(/name="woocommerce-login-nonce"\s+value="([^"]+)"/);
       const nonce = nonceMatch ? nonceMatch[1] : '';
 
@@ -452,8 +463,12 @@ app.post('/api/woocommerce/login', async (req, res) => {
         redirect: 'manual',
       });
 
-      postCookies = postRes.headers.get('set-cookie') || '';
-      isWcSuccess = postCookies.includes('wordpress_logged_in') || postRes.status === 302;
+      const getSetCookie = (postRes.headers as any).getSetCookie;
+      postCookiesRaw = typeof getSetCookie === 'function'
+        ? getSetCookie.call(postRes.headers)
+        : (postRes.headers.get('set-cookie') || '');
+      const joinedCookies = Array.isArray(postCookiesRaw) ? postCookiesRaw.join('; ') : postCookiesRaw;
+      isWcSuccess = joinedCookies.includes('wordpress_logged_in') || postRes.status === 302;
 
       if (!isWcSuccess) {
         const postHtml = await postRes.text();
@@ -496,7 +511,7 @@ app.post('/api/woocommerce/login', async (req, res) => {
 
     // Issue unique secure session token
     const sessionId = 'merqba_sess_' + crypto.randomBytes(32).toString('hex');
-    const cleanedCookies = cleanCookieHeader(postCookies);
+    const cleanedCookies = cleanCookieHeader(postCookiesRaw);
 
     // Fetch initial WP REST nonce using the authenticated cookies
     let initialNonce: string | undefined;
@@ -617,22 +632,23 @@ app.post('/api/woocommerce/login', async (req, res) => {
       sessionId,
       username: cleanUser,
       password: cleanPass,
-      cookies: cleanedCookies || postCookies,
+      cookies: cleanedCookies,
       wpNonce: initialNonce,
       vendorId: matchedVendor.id,
       createdAt: Date.now(),
-      expiresAt: Date.now() + 24 * 60 * 60 * 1000, // 24-hour expiration
+      expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30-day expiration
     };
 
     activeSessions.set(sessionId, newSession);
     saveSessionsToFile();
 
-    // Set HTTP-only Cookie for security
+    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https';
     res.cookie('merqba_session_token', sessionId, {
       httpOnly: true,
       path: '/',
-      maxAge: 86400000,
-      sameSite: 'lax',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+      sameSite: isHttps ? 'none' : 'lax',
+      secure: isHttps,
     });
 
     return res.json({
@@ -733,22 +749,18 @@ app.get('/api/woocommerce/products', async (req, res) => {
   // Strategy B: Fallback to general WooCommerce API if Dokan store fetch was not used or yielded 0 products
   if (rawData.length === 0 && !isDokanSource) {
     try {
-      const authHeader = getWcAuthHeader();
+      const adminHeaders = getWcAdminHeaders();
       const headers: Record<string, string> = {
         Accept: 'application/json',
         'User-Agent': 'MerqbaFA/1.0',
       };
-      if (authHeader) {
-        headers['Authorization'] = authHeader;
-      } else if (session?.username && session?.password) {
-        headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
-        if (session.cookies) {
-          headers['Cookie'] = session.cookies;
-        }
+      if (!adminHeaders && session?.cookies) {
+        const clean = cleanCookieHeader(session.cookies);
+        if (clean) headers['Cookie'] = clean;
       }
 
       for (let page = 1; page <= 5; page++) {
-        const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products?per_page=100&page=${page}`;
+        const targetUrl = buildWcApiUrl(`/wp-json/wc/v3/products?per_page=100&page=${page}`);
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 9000);
 
@@ -933,23 +945,20 @@ app.post('/api/woocommerce/upload-image', async (req, res) => {
 
     if (productId && (uploadedMediaUrl || uploadedMediaId)) {
       try {
-        const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${productId}`;
+        const targetUrl = buildWcApiUrl(`/wp-json/wc/v3/products/${productId}`);
         const imagePayload: any = {
           images: uploadedMediaId
             ? [{ id: parseInt(uploadedMediaId, 10), src: uploadedMediaUrl }]
             : (uploadedMediaUrl.startsWith('http') ? [{ src: uploadedMediaUrl }] : undefined),
         };
 
-        if (imagePayload.images && getWcAuthHeader()) {
+        const adminHeaders = getWcAdminHeaders();
+        if (imagePayload.images && adminHeaders) {
           const controller = new AbortController();
           const timeout = setTimeout(() => controller.abort(), 12000);
           await fetch(targetUrl, {
             method: 'PUT',
-            headers: {
-              Authorization: getWcAuthHeader(),
-              'Content-Type': 'application/json',
-              'User-Agent': 'MerqbaFA/1.0',
-            },
+            headers: adminHeaders,
             body: JSON.stringify(imagePayload),
             signal: controller.signal,
           });
@@ -1004,12 +1013,11 @@ app.post('/api/woocommerce/batch', async (req, res) => {
   }
 
   const createItems = products
-    .filter((p: any) => p.isNew || p.id > 50000 || String(p.id).length > 6)
+    .filter((p: any) => p.isNew === true)
     .map((p: any) => ({
       name: p.name,
       regular_price: String(p.regularPrice !== undefined ? p.regularPrice : p.price),
-      sale_price: p.salePrice !== undefined && p.salePrice !== '' ? String(p.salePrice) : undefined,
-      price: String(p.price),
+      sale_price: p.salePrice !== undefined && p.salePrice !== null && p.salePrice !== '' ? String(p.salePrice) : undefined,
       manage_stock: true,
       stock_quantity: p.stockQuantity,
       stock_status: p.stockQuantity > 0 ? 'instock' : 'outofstock',
@@ -1020,7 +1028,7 @@ app.post('/api/woocommerce/batch', async (req, res) => {
     }));
 
   const updateItems = products
-    .filter((p: any) => !p.isNew && p.id <= 50000 && String(p.id).length <= 6)
+    .filter((p: any) => p.isNew !== true && Number(p.id) > 0)
     .map((p: any) => {
       const isInstock = p.stockStatus === 'instock';
       const qty = isInstock ? (Number(p.stockQuantity) > 0 ? Number(p.stockQuantity) : 10) : 0;
@@ -1029,18 +1037,17 @@ app.post('/api/woocommerce/batch', async (req, res) => {
         : (p.price !== undefined && p.price !== null && p.price !== '' ? String(p.price) : undefined);
       const finalSale = p.salePrice !== undefined && p.salePrice !== null && p.salePrice !== ''
         ? String(p.salePrice)
-        : (p.salePrice === '' || p.salePrice === null ? '' : undefined);
+        : '';
 
       return {
-        id: p.id,
+        id: Number(p.id),
         name: p.name,
         regular_price: finalRegular,
         sale_price: finalSale,
-        price: String(p.price),
         manage_stock: true,
         stock_quantity: qty,
         stock_status: isInstock ? 'instock' : 'outofstock',
-        images: p.imageUrl ? [{ src: p.imageUrl }] : undefined,
+        images: p.imageUrl && String(p.imageUrl).startsWith('http') ? [{ src: p.imageUrl }] : undefined,
       };
     });
 
@@ -1049,47 +1056,62 @@ app.post('/api/woocommerce/batch', async (req, res) => {
   if (updateItems.length > 0) batchPayload.update = updateItems;
 
   if (Object.keys(batchPayload).length === 0) {
-    return res.json({ success: true, message: 'No changes to batch sync' });
+    return res.json({ success: true, savedToWooCommerce: true, message: 'No hay cambios pendientes para sincronizar.' });
   }
 
-  const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/batch`;
+  const targetUrl = buildWcApiUrl('/wp-json/wc/v3/products/batch');
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
-
-    const headers = await getAuthenticatedHeaders(session);
-
+    const adminHeaders = getWcAdminHeaders();
     let isSuccess = false;
     let successCount = 0;
     let responseData: any = null;
+    let lastErrorDetail = '';
 
-    // 1. First attempt native WC batch update
-    try {
-      const response = await fetch(targetUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(batchPayload),
-        signal: controller.signal,
-      });
+    // 1. First attempt native WC Admin batch update
+    if (adminHeaders) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      try {
+        const response = await fetch(targetUrl, {
+          method: 'POST',
+          headers: adminHeaders,
+          body: JSON.stringify(batchPayload),
+          signal: controller.signal,
+        });
 
-      if (response.ok) {
-        responseData = await response.json();
-        isSuccess = true;
-        successCount = updateItems.length;
+        if (response.ok) {
+          responseData = await response.json();
+          const updatedResults = Array.isArray(responseData?.update) ? responseData.update : [];
+          const createdResults = Array.isArray(responseData?.create) ? responseData.create : [];
+          const failedUpdates = updatedResults.filter((item: any) => item?.error);
+          if (failedUpdates.length === 0) {
+            isSuccess = true;
+            successCount = updatedResults.length + createdResults.length;
+          } else {
+            lastErrorDetail = failedUpdates[0]?.error?.message || 'Algunos productos no pudieron actualizarse en lote';
+            console.warn('[BATCH] Partial WC batch errors:', failedUpdates.map((f: any) => ({ id: f.id, error: f.error })));
+            successCount = updatedResults.length - failedUpdates.length + createdResults.length;
+            isSuccess = successCount > 0 && failedUpdates.length < updatedResults.length;
+          }
+        } else {
+          lastErrorDetail = `WC HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`;
+          console.warn('[BATCH] WC Admin batch rejected:', lastErrorDetail);
+        }
+      } catch (e: any) {
+        lastErrorDetail = e.message;
+        console.warn('Native WC batch sync exception:', e.message);
+      } finally {
+        clearTimeout(timeout);
       }
-    } catch (e: any) {
-      console.warn('Native WC batch sync exception:', e.message);
-    } finally {
-      clearTimeout(timeout);
     }
 
-    // 2. Fallback: If WC batch was rejected (e.g. 403 because Dokan vendors lack manage_woocommerce permission),
-    // update each product individually via PUT /wp-json/wc/v3/products/:id or Dokan endpoint
+    // 2. Fallback: Update each product individually via WC Admin or Vendor Dokan session
     if (!isSuccess && updateItems.length > 0) {
+      const vendorHeaders = await getVendorSessionHeaders(session, true);
       for (const item of updateItems) {
         try {
-          const itemUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${item.id}`;
+          const itemUrl = buildWcApiUrl(`/wp-json/wc/v3/products/${item.id}`);
           const dokanItemUrl = `${WC_STORE_URL}/wp-json/dokan/v1/products/${item.id}`;
           const itemPayload: Record<string, any> = {};
           if (item.name) itemPayload.name = item.name;
@@ -1102,22 +1124,38 @@ app.post('/api/woocommerce/batch', async (req, res) => {
           }
           if (item.images) itemPayload.images = item.images;
 
-          let singleRes = await fetch(itemUrl, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify(itemPayload),
-          });
-          if (!singleRes.ok) {
-            singleRes = await fetch(dokanItemUrl, {
+          let singleOk = false;
+          if (adminHeaders) {
+            const singleRes = await fetch(itemUrl, {
               method: 'PUT',
-              headers,
+              headers: adminHeaders,
               body: JSON.stringify(itemPayload),
             });
+            if (singleRes.ok) {
+              singleOk = true;
+            } else {
+              lastErrorDetail = `WC single HTTP ${singleRes.status}`;
+            }
           }
-          if (singleRes.ok) {
+
+          if (!singleOk && vendorHeaders) {
+            const dokanRes = await fetch(dokanItemUrl, {
+              method: 'PUT',
+              headers: vendorHeaders,
+              body: JSON.stringify(itemPayload),
+            });
+            if (dokanRes.ok) {
+              singleOk = true;
+            } else {
+              lastErrorDetail = `Dokan HTTP ${dokanRes.status}`;
+            }
+          }
+
+          if (singleOk) {
             successCount++;
           }
         } catch (singleErr: any) {
+          lastErrorDetail = singleErr.message;
           console.warn(`Error updating product #${item.id} in fallback:`, singleErr.message);
         }
       }
@@ -1135,21 +1173,21 @@ app.post('/api/woocommerce/batch', async (req, res) => {
         data: responseData,
       });
     } else {
-      return res.json({
-        success: true,
-        statusCode: 200,
+      return res.status(502).json({
+        success: false,
+        statusCode: 502,
         savedToWooCommerce: false,
-        simulated: true,
-        message: 'Cambios aplicados localmente.',
+        message: 'No se pudieron guardar los cambios en la tienda. Verifica tu sesión e intenta nuevamente.',
+        errorDetail: lastErrorDetail,
       });
     }
   } catch (err: any) {
-    return res.json({
-      success: true,
-      statusCode: 200,
+    return res.status(500).json({
+      success: false,
+      statusCode: 500,
       savedToWooCommerce: false,
-      simulated: true,
-      message: 'Cambios guardados localmente.',
+      message: 'Error de conexión al guardar cambios en la tienda.',
+      errorDetail: err.message,
     });
   }
 });
@@ -1157,9 +1195,18 @@ app.post('/api/woocommerce/batch', async (req, res) => {
 // 3a. Update Single Product (Price, Regular Price, Sale Price, Stock, Name, Images)
 async function handleSingleProductUpdate(req: express.Request, res: express.Response) {
   const session = getSessionFromRequest(req);
+  if (!session) {
+    return res.status(401).json({
+      success: false,
+      savedToWooCommerce: false,
+      authRequired: true,
+      message: 'Tu sesión expiró. Inicia sesión nuevamente para guardar cambios en tu tienda.',
+    });
+  }
+
   const productId = parseInt(req.params.id, 10);
   if (isNaN(productId)) {
-    return res.status(400).json({ success: false, message: 'ID de producto inválido' });
+    return res.status(400).json({ success: false, savedToWooCommerce: false, message: 'ID de producto inválido' });
   }
 
   const { name, price, regularPrice, salePrice, stockStatus, stockQuantity, imageUrl } = req.body;
@@ -1170,7 +1217,8 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
     payload.name = name.trim();
   }
 
-  // Authoritative regular_price calculation
+  // Authoritative regular_price calculation:
+  // If regularPrice is passed, use it; fallback to price.
   const finalRegular = regularPrice !== undefined && regularPrice !== null && regularPrice !== ''
     ? String(regularPrice)
     : (price !== undefined && price !== null && price !== '' ? String(price) : undefined);
@@ -1199,91 +1247,135 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
     payload.stock_status = qty > 0 ? 'instock' : 'outofstock';
   }
 
-  if (imageUrl) {
+  if (imageUrl && String(imageUrl).startsWith('http')) {
     payload.images = [{ src: imageUrl }];
   }
 
   // Invalidate in-memory products cache
   productsCacheMap.clear();
 
-  const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${productId}`;
+  const targetUrl = buildWcApiUrl(`/wp-json/wc/v3/products/${productId}`);
   const dokanTargetUrl = `${WC_STORE_URL}/wp-json/dokan/v1/products/${productId}`;
 
   try {
-    let headers = await getAuthenticatedHeaders(session);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
+    const adminHeaders = getWcAdminHeaders();
+    let response: Response | null = null;
+    let lastErrorDetail = '';
 
-    let response = await fetch(targetUrl, {
-      method: 'PUT',
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+    // Verify ownership against WooCommerce product before modifying if adminHeaders available
+    if (adminHeaders) {
+      try {
+        const checkCtrl = new AbortController();
+        const checkTimeout = setTimeout(() => checkCtrl.abort(), 7000);
+        const checkRes = await fetch(targetUrl, {
+          method: 'GET',
+          headers: adminHeaders,
+          signal: checkCtrl.signal,
+        });
+        clearTimeout(checkTimeout);
 
-    clearTimeout(timeout);
+        if (checkRes.ok) {
+          const existingProd = await checkRes.json();
+          const dokanMeta = existingProd?.meta_data?.find(
+            (m: any) => m.key === '_dokan_vendor_id' || m.key === 'dokan_vendor' || m.key === '_dokan_store_id'
+          )?.value;
+          const ownerId = dokanMeta
+            ? parseInt(String(dokanMeta), 10)
+            : (existingProd?.store?.id ? Number(existingProd.store.id) : null);
+          if (ownerId && ownerId !== session.vendorId) {
+            return res.status(403).json({
+              success: false,
+              savedToWooCommerce: false,
+              message: `No tienes permiso para modificar el producto #${productId}.`,
+            });
+          }
+        }
+      } catch {
+        // Proceed to update attempt if pre-check timed out
+      }
 
-    // If rejected due to expired nonce (403), refresh nonce and retry once
-    if (response.status === 403 && session) {
-      headers = await getAuthenticatedHeaders(session, true);
-      const retryController = new AbortController();
-      const retryTimeout = setTimeout(() => retryController.abort(), 9000);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 9000);
       try {
         response = await fetch(targetUrl, {
           method: 'PUT',
-          headers,
+          headers: adminHeaders,
           body: JSON.stringify(payload),
-          signal: retryController.signal,
+          signal: controller.signal,
         });
-      } catch (retryErr) {
-        // ignore
-      } finally {
-        clearTimeout(retryTimeout);
-      }
-    }
-
-    // If WC failed or returned unauthorized, fallback to Dokan REST API
-    if (!response.ok) {
-      const dokanController = new AbortController();
-      const dokanTimeout = setTimeout(() => dokanController.abort(), 9000);
-      try {
-        const dokanRes = await fetch(dokanTargetUrl, {
-          method: 'PUT',
-          headers,
-          body: JSON.stringify(payload),
-          signal: dokanController.signal,
-        });
-        clearTimeout(dokanTimeout);
-        if (dokanRes.ok) {
-          response = dokanRes;
+        if (!response.ok) {
+          lastErrorDetail = `WC HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`;
+          console.warn(`[PRODUCT UPDATE #${productId}] WC Admin rejected:`, lastErrorDetail);
         }
-      } catch (dokanErr) {
-        clearTimeout(dokanTimeout);
+      } catch (wcErr: any) {
+        lastErrorDetail = wcErr.message;
+        console.warn(`[PRODUCT UPDATE #${productId}] WC Admin exception:`, wcErr.message);
+      } finally {
+        clearTimeout(timeout);
       }
     }
 
-    const saved = response.ok;
-    const responseBody = saved ? await response.json().catch(() => ({})) : null;
+    // Fallback to Vendor Dokan REST API (clean cookie + refreshed nonce, NO mixed admin Basic auth)
+    if (!response || !response.ok) {
+      const vendorHeaders = await getVendorSessionHeaders(session, true);
+      if (vendorHeaders) {
+        const dokanController = new AbortController();
+        const dokanTimeout = setTimeout(() => dokanController.abort(), 9000);
+        try {
+          const dokanRes = await fetch(dokanTargetUrl, {
+            method: 'PUT',
+            headers: vendorHeaders,
+            body: JSON.stringify(payload),
+            signal: dokanController.signal,
+          });
+          clearTimeout(dokanTimeout);
+          if (dokanRes.ok) {
+            response = dokanRes;
+          } else {
+            lastErrorDetail = `Dokan HTTP ${dokanRes.status}: ${(await dokanRes.text()).slice(0, 200)}`;
+            console.warn(`[PRODUCT UPDATE #${productId}] Dokan fallback rejected:`, lastErrorDetail);
+          }
+        } catch (dokanErr: any) {
+          clearTimeout(dokanTimeout);
+          lastErrorDetail = dokanErr.message;
+        }
+      }
+    }
+
+    const saved = Boolean(response && response.ok);
+    const responseBody = saved && response ? await response.json().catch(() => null) : null;
+
+    const confirmedRegular = responseBody?.regular_price !== undefined && responseBody?.regular_price !== ''
+      ? parseFloat(responseBody.regular_price)
+      : (finalRegular ? parseFloat(finalRegular) : undefined);
+    const confirmedSale = responseBody?.sale_price !== undefined && responseBody?.sale_price !== ''
+      ? parseFloat(responseBody.sale_price)
+      : undefined;
+    const confirmedPrice = responseBody?.price !== undefined && responseBody?.price !== ''
+      ? parseFloat(responseBody.price)
+      : (confirmedSale !== undefined ? confirmedSale : confirmedRegular);
 
     return res.json({
-      success: true,
+      success: saved,
       productId,
-      price: finalRegular ? parseFloat(finalRegular) : undefined,
-      regularPrice: finalRegular ? parseFloat(finalRegular) : undefined,
-      salePrice: payload.sale_price !== undefined && payload.sale_price !== '' ? parseFloat(payload.sale_price) : undefined,
+      price: confirmedPrice,
+      regularPrice: confirmedRegular,
+      salePrice: confirmedSale,
       stockStatus: payload.stock_status,
       stockQuantity: payload.stock_quantity,
       savedToWooCommerce: saved,
       data: responseBody,
+      errorDetail: saved ? undefined : lastErrorDetail,
       message: saved
         ? `Producto #${productId} actualizado con éxito en tu tienda.`
-        : `Producto #${productId} guardado localmente.`,
+        : `No se pudo actualizar el producto #${productId} en la tienda. Guardado localmente.`,
     });
   } catch (err: any) {
     return res.json({
-      success: true,
+      success: false,
       productId,
       savedToWooCommerce: false,
+      errorDetail: err.message,
       message: `Producto #${productId} guardado localmente (${err.message}).`,
     });
   }
@@ -1305,24 +1397,9 @@ app.post('/api/woocommerce/products', async (req, res) => {
   const isInstock = newProductData.stockStatus === 'instock';
   const qty = isInstock ? (Number(newProductData.stockQuantity) > 0 ? Number(newProductData.stockQuantity) : 10) : 0;
 
-  const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products`;
+  const targetUrl = buildWcApiUrl('/wp-json/wc/v3/products');
   const dokanTargetUrl = `${WC_STORE_URL}/wp-json/dokan/v1/products`;
-  const authHeader = getWcAuthHeader();
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json',
-    'User-Agent': 'MerqbaFA/1.0',
-  };
-
-  if (authHeader) {
-    headers['Authorization'] = authHeader;
-  } else if (session?.username && session?.password) {
-    headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
-    if (session.cookies) {
-      headers['Cookie'] = session.cookies;
-    }
-  }
+  const adminHeaders = getWcAdminHeaders();
 
   const payload = {
     name: newProductData.name,
@@ -1339,40 +1416,47 @@ app.post('/api/woocommerce/products', async (req, res) => {
   };
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-
-    let response = await fetch(targetUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      const dokanController = new AbortController();
-      const dokanTimeout = setTimeout(() => dokanController.abort(), 10000);
+    let response: Response | null = null;
+    if (adminHeaders) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
       try {
-        const dokanRes = await fetch(dokanTargetUrl, {
+        response = await fetch(targetUrl, {
           method: 'POST',
-          headers,
+          headers: adminHeaders,
           body: JSON.stringify(payload),
-          signal: dokanController.signal,
+          signal: controller.signal,
         });
-        clearTimeout(dokanTimeout);
-        if (dokanRes.ok) {
-          response = dokanRes;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    if (!response || !response.ok) {
+      const vendorHeaders = await getVendorSessionHeaders(session, true);
+      if (vendorHeaders) {
+        const dokanController = new AbortController();
+        const dokanTimeout = setTimeout(() => dokanController.abort(), 10000);
+        try {
+          const dokanRes = await fetch(dokanTargetUrl, {
+            method: 'POST',
+            headers: vendorHeaders,
+            body: JSON.stringify(payload),
+            signal: dokanController.signal,
+          });
+          clearTimeout(dokanTimeout);
+          if (dokanRes.ok) {
+            response = dokanRes;
+          }
+        } catch (e) {
+          clearTimeout(dokanTimeout);
         }
-      } catch (e) {
-        clearTimeout(dokanTimeout);
       }
     }
 
     productsCacheMap.clear();
 
-    if (response.ok) {
+    if (response && response.ok) {
       const createdWcProduct = await response.json();
       return res.json({
         success: true,
@@ -1448,20 +1532,16 @@ app.delete('/api/woocommerce/products/:id', async (req, res) => {
   }
 
   const { id } = req.params;
-  const targetUrl = `${WC_STORE_URL}/wp-json/wc/v3/products/${id}?force=true`;
+  const targetUrl = buildWcApiUrl(`/wp-json/wc/v3/products/${id}?force=true`);
 
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
 
-    const authHeader = getWcAuthHeader();
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'User-Agent': 'MerqbaFA/1.0',
     };
-    if (authHeader) {
-      headers['Authorization'] = authHeader;
-    }
 
     const response = await fetch(targetUrl, {
       method: 'DELETE',
@@ -1574,24 +1654,10 @@ async function getVendorRateFromWordPress(session: ActiveSession): Promise<Vendo
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 7000);
 
-    const headers: Record<string, string> = {
+    const headers = (await getVendorSessionHeaders(session)) || {
       Accept: 'application/json',
       'User-Agent': 'MerqbaFA/1.0',
     };
-
-    if (session.cookies) {
-      headers['Cookie'] = session.cookies;
-      if (!session.wpNonce) {
-        await refreshSessionNonce(session);
-      }
-      if (session.wpNonce) {
-        headers['X-WP-Nonce'] = session.wpNonce;
-      }
-    }
-
-    if (session.username && session.password) {
-      headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
-    }
 
     const response = await fetch(MERQBA_VENDOR_RATE_ENDPOINT, {
       method: 'GET',
@@ -1665,25 +1731,11 @@ async function updateVendorRateInWordPress(session: ActiveSession, newRate: numb
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 9000);
 
-    const headers: Record<string, string> = {
+    const headers = (await getVendorSessionHeaders(session, true)) || {
       'Content-Type': 'application/json',
       Accept: 'application/json',
       'User-Agent': 'MerqbaFA/1.0',
     };
-
-    if (session.cookies) {
-      headers['Cookie'] = session.cookies;
-      if (!session.wpNonce) {
-        await refreshSessionNonce(session);
-      }
-      if (session.wpNonce) {
-        headers['X-WP-Nonce'] = session.wpNonce;
-      }
-    }
-
-    if (session.username && session.password) {
-      headers['Authorization'] = `Basic ${Buffer.from(`${session.username}:${session.password}`).toString('base64')}`;
-    }
 
     // Exact JSON body payload required: { "rate": 500 } (number or string accepted by PHP)
     const payload = {

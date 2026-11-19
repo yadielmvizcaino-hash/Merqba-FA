@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw, Send, Settings, Zap, Wifi, WifiOff, LogIn } from 'lucide-react';
+import { RefreshCw, Send, Settings, Zap, Wifi, WifiOff, LogIn, HelpCircle } from 'lucide-react';
 import { DokanVendor, StoreConfig } from '../types';
 
 interface HeaderProps {
@@ -12,6 +12,7 @@ interface HeaderProps {
   onApplyChanges: () => void;
   onOpenVendorLogin: () => void;
   onOpenStoreConfig: () => void;
+  onOpenTour?: () => void;
   lastSyncTime: string;
   isOnline?: boolean;
   isAuthenticated?: boolean;
@@ -28,6 +29,7 @@ export const Header: React.FC<HeaderProps> = ({
   onApplyChanges,
   onOpenVendorLogin,
   onOpenStoreConfig,
+  onOpenTour,
   lastSyncTime,
   isOnline = true,
   isAuthenticated = false,
@@ -115,8 +117,20 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Right: Settings, Sync & Apply Changes */}
+        {/* Right: Guide, Settings, Sync & Apply Changes */}
         <div className="flex items-center gap-2">
+          {/* Quick Tour Help Button */}
+          {isAuthenticated && onOpenTour && (
+            <button
+              onClick={onOpenTour}
+              className="p-2 text-slate-300 hover:text-[#FFA000] hover:bg-[#1C222E] rounded-lg transition-colors cursor-pointer border border-[#273142] h-10 w-10 flex items-center justify-center shrink-0 bg-[#121620]"
+              title="Guía rápida de uso"
+              aria-label="Abrir guía rápida"
+            >
+              <HelpCircle className="w-5 h-5" />
+            </button>
+          )}
+
           {/* Settings / Config Button */}
           <button
             onClick={onOpenStoreConfig}
@@ -129,6 +143,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Sync Button */}
           <button
+            data-tour="sync-btn"
             onClick={onSync}
             disabled={isSyncing}
             className="flex items-center gap-1.5 px-3 py-2 border border-[#273142] bg-[#121620] hover:bg-[#1C222E] active:bg-[#252E3D] text-slate-100 text-xs sm:text-sm font-semibold rounded-lg transition-all cursor-pointer shadow-xs disabled:opacity-60 h-10 shrink-0"
@@ -140,6 +155,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Apply Changes Button */}
           <button
+            data-tour="apply-changes-btn"
             onClick={onApplyChanges}
             disabled={isDispatchingWebhook}
             className={`relative hidden sm:flex items-center justify-center gap-2 px-3.5 sm:px-4 py-2 text-white font-bold text-xs sm:text-sm rounded-lg shadow-sm transition-all cursor-pointer h-10 shrink-0 ${

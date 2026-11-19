@@ -22,8 +22,9 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState(product?.name || '');
-  const [price, setPrice] = useState(product?.price ? product.price.toString() : '');
-  const [regularPrice, setRegularPrice] = useState(product?.regularPrice ? product.regularPrice.toString() : '');
+  const [regularPrice, setRegularPrice] = useState(
+    product ? (product.regularPrice || product.price).toString() : ''
+  );
   const [salePrice, setSalePrice] = useState(product?.salePrice ? product.salePrice.toString() : '');
   const [stockQuantity, setStockQuantity] = useState(product?.stockQuantity !== undefined ? product.stockQuantity.toString() : '0');
   const [stockStatus, setStockStatus] = useState<StockStatus>(product?.stockStatus || 'instock');
@@ -34,8 +35,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   useEffect(() => {
     if (product) {
       setName(product.name);
-      setPrice(product.price.toString());
-      setRegularPrice(product.regularPrice.toString());
+      setRegularPrice((product.regularPrice || product.price).toString());
       setSalePrice(product.salePrice ? product.salePrice.toString() : '');
       setStockQuantity(product.stockQuantity.toString());
       setStockStatus(product.stockStatus);
@@ -108,9 +108,17 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const parsedPrice = parseFloat(price) || 0;
-    const parsedRegular = parseFloat(regularPrice) || parsedPrice;
-    const parsedSale = salePrice ? parseFloat(salePrice) : undefined;
+    const parsedRegular = parseFloat(regularPrice);
+    const validRegular = !isNaN(parsedRegular) && parsedRegular >= 0 ? parsedRegular : 0;
+    const parsedSaleRaw = salePrice.trim() !== '' ? parseFloat(salePrice) : undefined;
+    const validSale =
+      parsedSaleRaw !== undefined &&
+      !isNaN(parsedSaleRaw) &&
+      parsedSaleRaw > 0 &&
+      parsedSaleRaw < validRegular
+        ? parsedSaleRaw
+        : undefined;
+    const effectivePrice = validSale !== undefined ? validSale : validRegular;
     const parsedQty = parseInt(stockQuantity, 10) || 0;
     const finalStatus = stockStatus;
     const finalQty = finalStatus === 'instock' && parsedQty <= 0 ? 10 : (finalStatus === 'outofstock' ? 0 : parsedQty);
@@ -118,9 +126,9 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
     onSave({
       ...product,
       name: name.trim() || product.name,
-      price: parsedPrice,
-      regularPrice: parsedRegular,
-      salePrice: parsedSale,
+      price: effectivePrice,
+      regularPrice: validRegular,
+      salePrice: validSale,
       stockQuantity: finalQty,
       stockStatus: finalStatus,
       imageUrl,
@@ -232,7 +240,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-[#0F172A] mb-1">
-                Precio de Venta ({config.currencySymbol})
+                Precio ({config.currencySymbol})
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#64748B]">
@@ -241,9 +249,10 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                 <input
                   type="number"
                   step="0.01"
+                  min="0"
                   required
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value)}
+                  value={regularPrice}
+                  onChange={(e) => setRegularPrice(e.target.value)}
                   className="w-full pl-7 pr-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm font-bold text-[#0F172A] focus:outline-none focus:border-[#FF5A00] tabular-nums"
                 />
               </div>
@@ -251,7 +260,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
 
             <div>
               <label className="block text-xs font-bold text-[#0F172A] mb-1">
-                Precio Regular ({config.currencySymbol})
+                Precio de Oferta ({config.currencySymbol}) <span className="text-[10px] font-normal text-[#64748B]">(Opcional)</span>
               </label>
               <div className="relative">
                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#64748B]">
@@ -260,8 +269,10 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
                 <input
                   type="number"
                   step="0.01"
-                  value={regularPrice}
-                  onChange={(e) => setRegularPrice(e.target.value)}
+                  min="0"
+                  placeholder="Opcional"
+                  value={salePrice}
+                  onChange={(e) => setSalePrice(e.target.value)}
                   className="w-full pl-7 pr-3 py-2 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-sm text-[#0F172A] focus:outline-none focus:border-[#FF5A00] tabular-nums"
                 />
               </div>
