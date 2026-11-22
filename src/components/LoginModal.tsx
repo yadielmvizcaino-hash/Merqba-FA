@@ -68,9 +68,15 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         }),
       });
 
-      const data = await response.json();
+      const rawText = await response.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
 
-      if (response.ok && data.success && data.vendor) {
+      if (response.ok && data && data.success && data.vendor) {
         const verifiedVendor: DokanVendor = {
           ...data.vendor,
         };
@@ -110,7 +116,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         onClose();
       } else {
         setLoginError(
-          data.message || 'Contraseña o credenciales incorrectas. Verifica tus datos de acceso en Merqba.'
+          data?.message ||
+            (response.status >= 500
+              ? `El servidor respondió temporalmente con error (${response.status}). Intenta nuevamente en unos segundos.`
+              : 'Contraseña o credenciales incorrectas. Verifica tus datos de acceso en Merqba.')
         );
       }
     } catch (err: any) {

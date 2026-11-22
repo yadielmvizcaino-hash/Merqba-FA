@@ -32,10 +32,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.set('trust proxy', 1);
 const args = process.argv.slice(2);
 const portArgIndex = args.indexOf('--port');
 const portFromArgs = portArgIndex !== -1 && args[portArgIndex + 1] ? parseInt(args[portArgIndex + 1], 10) : null;
-const PORT = portFromArgs || Number(process.env.DEFAULT_APP_PORT) || 3000;
+const PORT = portFromArgs || Number(process.env.PORT) || Number(process.env.DEFAULT_APP_PORT) || 3000;
+
+app.get('/api/health', (_req, res) => {
+  res.status(200).json({ ok: true, status: 'healthy' });
+});
 
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
@@ -2594,7 +2599,15 @@ async function startServer() {
   });
 }
 
+process.on('unhandledRejection', (reason: any) => {
+  console.warn('[Merqba FA] Unhandled rejection caught:', sanitizeLogMessage(String(reason?.message || reason || 'unknown')));
+});
+
+process.on('uncaughtException', (err: any) => {
+  console.error('[Merqba FA] Uncaught exception:', sanitizeLogMessage(String(err?.message || err || 'unknown')));
+});
+
 startServer().catch((err) => {
-  console.error('[Merqba FA] Fatal error starting server:', err);
+  console.error('[Merqba FA] Fatal error starting server:', sanitizeLogMessage(String(err?.message || err)));
   process.exit(1);
 });

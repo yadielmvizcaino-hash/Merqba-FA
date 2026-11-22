@@ -21,6 +21,8 @@ COPY package.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./server.ts
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 
 EXPOSE 3000
