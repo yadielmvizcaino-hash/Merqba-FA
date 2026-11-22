@@ -100,7 +100,7 @@ export const DEFAULT_CONFIG: StoreConfig = {
   storeUrl: 'https://merqba.com',
   consumerKey: '',
   consumerSecret: '',
-  webhookUrl: 'https://merqba.com/wp-json/merqba/v1/sync',
+  webhookUrl: '',
   realtimeSync: false,
   currency: 'USD',
   currencySymbol: '$',

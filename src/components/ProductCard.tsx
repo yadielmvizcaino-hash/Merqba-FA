@@ -49,13 +49,23 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   const [isEditingStock, setIsEditingStock] = useState(false);
   const [tempStock, setTempStock] = useState(product.stockQuantity.toString());
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const stockDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingStockQtyRef = useRef<number>(product.stockQuantity);
 
   // Keep local inputs in sync with product prop updates
   useEffect(() => {
     setTempStock(product.stockQuantity.toString());
+    pendingStockQtyRef.current = product.stockQuantity;
     setTempPrice(product.price.toString());
     setTempTitle(product.name);
   }, [product.stockQuantity, product.price, product.name]);
+
+  useEffect(() => {
+    return () => {
+      if (stockDebounceTimerRef.current) clearTimeout(stockDebounceTimerRef.current);
+    };
+  }, []);
 
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
@@ -112,18 +122,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
     setIsEditingStock(false);
   };
 
-  // Stepper increment/decrement
+  // Debounced Stepper increment/decrement (batches rapid clicks into 1 API call)
   const handleStockDelta = (delta: number) => {
-    const nextQty = Math.max(0, product.stockQuantity + delta);
-    const nextStatus = nextQty === 0 ? 'outofstock' : 'instock';
+    const baseQty = stockDebounceTimerRef.current ? pendingStockQtyRef.current : product.stockQuantity;
+    const nextQty = Math.max(0, baseQty + delta);
+    pendingStockQtyRef.current = nextQty;
     setTempStock(nextQty.toString());
-    onUpdateProduct({
-      ...product,
-      stockQuantity: nextQty,
-      stockStatus: nextStatus,
-      isModifiedLocally: true,
-      lastModified: new Date().toISOString(),
-    });
+
+    if (stockDebounceTimerRef.current) {
+      clearTimeout(stockDebounceTimerRef.current);
+    }
+    stockDebounceTimerRef.current = setTimeout(() => {
+      stockDebounceTimerRef.current = null;
+      const finalQty = pendingStockQtyRef.current;
+      const nextStatus = finalQty === 0 ? 'outofstock' : 'instock';
+      onUpdateProduct({
+        ...product,
+        stockQuantity: finalQty,
+        stockStatus: nextStatus,
+        isModifiedLocally: true,
+        lastModified: new Date().toISOString(),
+      });
+    }, 320);
   };
 
   // Interruptor de stock (Toggle Switch 44x26px)
@@ -183,44 +203,40 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       reader.onload = async (event) => {
         if (event.target?.result) {
           const base64 = event.target.result as string;
-          // Set preview immediately for rapid visual feedback
-          onUpdateProduct({
-            ...product,
-            imageUrl: base64,
-            isModifiedLocally: true,
-            lastModified: new Date().toISOString(),
-          });
-
+          setPreviewImageUrl(base64); // Local visual preview ONLY (do not PUT base64 to WC)
           setIsUploadingImage(true);
           try {
-            let creds: { username?: string; password?: string } = {};
-            try {
-              const raw = sessionStorage.getItem('merqba_auth_user');
-              if (raw) creds = JSON.parse(raw);
-            } catch (e) {}
+            const token =
+              sessionStorage.getItem('merqba_session_token') ||
+              localStorage.getItem('merqba_session_token');
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (token) headers['x-session-token'] = token;
 
             const res = await fetch('/api/woocommerce/upload-image', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers,
+              credentials: 'include',
               body: JSON.stringify({
                 filename: file.name,
-                fileData: base64,
+                base64,
                 mimeType: file.type || 'image/jpeg',
                 productId: product.id,
-                username: creds.username,
-                password: creds.password,
               }),
             });
             const data = await res.json();
-            if (data.success && data.url) {
+            if (res.ok && data.success && data.url) {
+              setPreviewImageUrl(null);
               onUpdateProduct({
                 ...product,
                 imageUrl: data.url,
                 isModifiedLocally: false,
                 lastModified: new Date().toISOString(),
               });
+            } else {
+              setPreviewImageUrl(null);
             }
           } catch (err) {
+            setPreviewImageUrl(null);
             console.warn('Error subiendo imagen:', err);
           } finally {
             setIsUploadingImage(false);
@@ -298,7 +314,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <div className="relative shrink-0 group/img">
             <div className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-lg overflow-hidden border border-[#E2E8F0] bg-[#F1F5F9] shadow-2xs">
               <img
-                src={product.imageUrl}
+                src={previewImageUrl || product.imageUrl}
                 alt={product.name}
                 className={`w-full h-full object-cover transition-transform group-hover/img:scale-105 ${
                   isOutOfStock ? 'grayscale opacity-75' : ''
@@ -543,7 +559,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   }`}
                   title="Clic para ingresar cantidad exacta"
                 >
-                  {product.stockQuantity}
+                  {tempStock}
                 </button>
               )}
 

@@ -16,7 +16,7 @@ import {
   getStoredWebhookLogs,
   resetAllData,
 } from './services/storage';
-import { dispatchProductsWebhook } from './services/webhook';
+import { dispatchProductsWebhook, enqueueIncrementalWebhook } from './services/webhook';
 import { Product, DokanVendor, StoreConfig, StatusFilter, SortOption, WebhookLog } from './types';
 import { Header } from './components/Header';
 import { VendorBar } from './components/VendorBar';
@@ -49,6 +49,8 @@ import {
   Check,
   DollarSign,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 export default function App() {
@@ -91,6 +93,13 @@ export default function App() {
   const [isBulkEditOpen, setIsBulkEditOpen] = useState(false);
   const [quickPriceInput, setQuickPriceInput] = useState<string>('');
 
+  // Server Pagination & Categories state
+  const [currentPage, setCurrentPage] = useState(1);
+  const perPage = 50;
+  const [totalServerProducts, setTotalServerProducts] = useState(0);
+  const [totalServerPages, setTotalServerPages] = useState(1);
+  const [serverCategories, setServerCategories] = useState<string[]>([]);
+
   // Modal states
   const [isLoginOpen, setIsLoginOpen] = useState<boolean>(!hasAuthCookie);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(hasAuthCookie);
@@ -101,6 +110,14 @@ export default function App() {
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [isDeletingProduct, setIsDeletingProduct] = useState(false);
   const [isTourOpen, setIsTourOpen] = useState(false);
+
+  // Refs for fresh closures, request cancellation, and debouncing
+  const productsRef = useRef<Product[]>(products);
+  productsRef.current = products;
+  const activeFetchAbortRef = useRef<AbortController | null>(null);
+  const isSyncInFlightRef = useRef<boolean>(false);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const storageSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Notifications
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
@@ -171,6 +188,14 @@ export default function App() {
               'Sesión Expirada',
               'Por seguridad, vuelve a iniciar sesión para guardar cambios en tu tienda.'
             );
+          } else if (status && status.isAuthenticated === true) {
+            if (status.activeVendorId) {
+              setActiveVendorId(status.activeVendorId);
+              setCurrentVendorId(status.activeVendorId);
+            }
+            if (loadedProducts.length === 0) {
+              fetchProductsPage({ page: 1, search: '', refresh: false, silent: true });
+            }
           }
         })
         .catch(() => {});
@@ -187,11 +212,16 @@ export default function App() {
     setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }));
   }, [hasAuthCookie]);
 
-  // Save products to storage whenever updated
+  // Debounced save to localStorage so large catalogs don't block UI thread
   useEffect(() => {
-    if (isAuthenticated && products.length > 0) {
+    if (!isAuthenticated || products.length === 0) return;
+    if (storageSaveTimerRef.current) clearTimeout(storageSaveTimerRef.current);
+    storageSaveTimerRef.current = setTimeout(() => {
       saveStoredProducts(products);
-    }
+    }, 450);
+    return () => {
+      if (storageSaveTimerRef.current) clearTimeout(storageSaveTimerRef.current);
+    };
   }, [products, isAuthenticated]);
 
   // First-login automatic onboarding tour
@@ -242,14 +272,14 @@ export default function App() {
     return products.filter((p) => p.vendorId === currentVendor.id);
   }, [products, currentVendor.id, isAuthenticated]);
 
-  // Available categories for this vendor
+  // Available categories for this vendor (combines cached server categories + current page)
   const vendorCategories = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(serverCategories);
     vendorProducts.forEach((p) => {
       if (p.category) set.add(p.category);
     });
     return Array.from(set);
-  }, [vendorProducts]);
+  }, [vendorProducts, serverCategories]);
 
   // Filtered & Sorted products list
   const displayProducts = useMemo(() => {
@@ -427,14 +457,18 @@ export default function App() {
     );
 
     if (config.realtimeSync) {
-      if (realtimeDebounceTimer.current) {
-        clearTimeout(realtimeDebounceTimer.current);
+      const changedSet = new Set(selectedProductIds);
+      const updatedTargets = productsRef.current.filter((p) => changedSet.has(p.id));
+      for (const item of updatedTargets) {
+        enqueueIncrementalWebhook(
+          currentVendor,
+          item,
+          'updated',
+          config,
+          (log) => setWebhookLogs((prev) => [log, ...prev].slice(0, 30)),
+          900
+        );
       }
-      realtimeDebounceTimer.current = setTimeout(async () => {
-        const currentVendorItems = products.filter((p) => p.vendorId === currentVendor.id);
-        const result = await dispatchProductsWebhook(currentVendor, currentVendorItems, config, 'realtime_change');
-        setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
-      }, 500);
     }
   };
 
@@ -471,32 +505,43 @@ export default function App() {
     return headers;
   };
 
-  // Debounced realtime webhook trigger
-  const realtimeDebounceTimer = useRef<any>(null);
-
   const handleUpdateProduct = async (updated: Product) => {
+    const previous = productsRef.current.find((item) => item.id === updated.id);
+
     // 1. Optimistic UI update
     setProducts((prev) =>
       prev.map((item) => (item.id === updated.id ? updated : item))
     );
 
-    // 2. Persist single product (price, regularPrice, salePrice, stock, name) immediately to the store
+    // Build minimal delta payload (send only modified fields)
+    const deltaPayload: Record<string, any> = {};
+    if (!previous || updated.name !== previous.name) deltaPayload.name = updated.name;
+    if (!previous || updated.regularPrice !== previous.regularPrice || updated.price !== previous.price) {
+      deltaPayload.price = updated.price;
+      deltaPayload.regularPrice = updated.regularPrice !== undefined ? updated.regularPrice : updated.price;
+    }
+    if (!previous || updated.salePrice !== previous.salePrice) {
+      deltaPayload.salePrice = updated.salePrice !== undefined ? updated.salePrice : null;
+    }
+    if (!previous || updated.stockStatus !== previous.stockStatus || updated.stockQuantity !== previous.stockQuantity) {
+      deltaPayload.stockStatus = updated.stockStatus;
+      deltaPayload.stockQuantity = updated.stockQuantity;
+    }
+    if (updated.imageUrl && updated.imageUrl.startsWith('http') && (!previous || updated.imageUrl !== previous.imageUrl)) {
+      deltaPayload.imageUrl = updated.imageUrl;
+    }
+    if (Object.keys(deltaPayload).length === 0) {
+      deltaPayload.price = updated.price;
+      deltaPayload.regularPrice = updated.regularPrice !== undefined ? updated.regularPrice : updated.price;
+    }
+
+    // 2. Persist single product delta immediately to store
     try {
       const res = await fetch(`/api/woocommerce/products/${updated.id}`, {
         method: 'PUT',
         headers: getAuthHeaders(),
         credentials: 'include',
-        body: JSON.stringify({
-          name: updated.name,
-          price: updated.price,
-          regularPrice: updated.regularPrice !== undefined ? updated.regularPrice : updated.price,
-          salePrice: updated.salePrice !== undefined ? updated.salePrice : null,
-          stockStatus: updated.stockStatus,
-          stockQuantity: updated.stockQuantity,
-          imageUrl: updated.imageUrl,
-          sku: updated.sku,
-          category: updated.category,
-        }),
+        body: JSON.stringify(deltaPayload),
       });
       const data = await res.json().catch(() => null);
 
@@ -511,25 +556,35 @@ export default function App() {
       }
 
       if (res.ok && data && data.savedToWooCommerce) {
+        const confirmedProduct: Product = {
+          ...updated,
+          price: data.price !== undefined ? data.price : updated.price,
+          regularPrice: data.regularPrice !== undefined ? data.regularPrice : updated.regularPrice,
+          salePrice: data.salePrice,
+          stockStatus: data.stockStatus || updated.stockStatus,
+          stockQuantity: data.stockQuantity !== undefined ? data.stockQuantity : updated.stockQuantity,
+          isModifiedLocally: false,
+        };
         setProducts((prev) =>
-          prev.map((item) =>
-            item.id === updated.id
-              ? {
-                  ...item,
-                  price: data.price !== undefined ? data.price : item.price,
-                  regularPrice: data.regularPrice !== undefined ? data.regularPrice : item.regularPrice,
-                  salePrice: data.salePrice,
-                  isModifiedLocally: false,
-                }
-              : item
-          )
+          prev.map((item) => (item.id === updated.id ? confirmedProduct : item))
         );
-        const confirmedPriceDisplay = data.price !== undefined ? data.price : updated.price;
+        const confirmedPriceDisplay = confirmedProduct.price;
         addToast(
           'success',
           'Precio y Producto Actualizados',
           `"${updated.name.slice(0, 25)}" actualizado en tu tienda (${config.currencySymbol}${Number(confirmedPriceDisplay).toFixed(2)}).`
         );
+
+        // 3. Incremental realtime webhook queue (ONLY this product, never full catalog)
+        if (config.realtimeSync) {
+          enqueueIncrementalWebhook(
+            currentVendor,
+            confirmedProduct,
+            'updated',
+            config,
+            (log) => setWebhookLogs((prev) => [log, ...prev].slice(0, 30))
+          );
+        }
       } else {
         addToast(
           'error',
@@ -545,130 +600,204 @@ export default function App() {
         `"${updated.name.slice(0, 25)}" guardado localmente. Pulsa "Aplicar Cambios" para sincronizar.`
       );
     }
-
-    // 3. If realtime sync is active, trigger background sync after 600ms debounce
-    if (config.realtimeSync) {
-      if (realtimeDebounceTimer.current) {
-        clearTimeout(realtimeDebounceTimer.current);
-      }
-      realtimeDebounceTimer.current = setTimeout(async () => {
-        const currentProducts = products.map((item) => (item.id === updated.id ? updated : item));
-        const currentVendorItems = currentProducts.filter((p) => p.vendorId === currentVendor.id);
-        const result = await dispatchProductsWebhook(currentVendor, currentVendorItems, config, 'realtime_change');
-        setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
-      }, 600);
-    }
   };
 
-  // Delete product handler
+  // Delete product handler (awaits real confirmation from server with auth headers)
   const handleConfirmDeleteProduct = async (product: Product) => {
     setIsDeletingProduct(true);
     try {
-      // 1. Delete on server proxy (if connected to Merqba)
-      fetch(`/api/woocommerce/products/${product.id}`, { method: 'DELETE' })
-        .catch((e) => console.warn('Server delete notification:', e));
+      const res = await fetch(`/api/woocommerce/products/${product.id}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+      });
+      const data = await res.json().catch(() => ({}));
 
-      // 2. Remove locally
+      if (res.status === 401 || data?.authRequired) {
+        addToast('error', 'Sesión Expirada', 'Vuelve a iniciar sesión para eliminar productos.');
+        setIsLoginOpen(true);
+        return;
+      }
+
+      if (!res.ok || !data.success) {
+        addToast(
+          'error',
+          'No se pudo eliminar el producto',
+          data?.message || 'El servidor no confirmó la eliminación en tu tienda.'
+        );
+        return;
+      }
+
       const updatedList = products.filter((p) => p.id !== product.id);
       setProducts(updatedList);
       saveStoredProducts(updatedList);
+      setTotalServerProducts((prev) => Math.max(0, prev - 1));
 
-      // 3. Webhook sync if realtime active
       if (config.realtimeSync) {
-        const remainingVendorItems = updatedList.filter((p) => p.vendorId === currentVendor.id);
-        dispatchProductsWebhook(currentVendor, remainingVendorItems, config, 'realtime_change')
-          .then((res) => setWebhookLogs((prev) => [res.log, ...prev].slice(0, 30)))
-          .catch(() => {});
+        enqueueIncrementalWebhook(
+          currentVendor,
+          product,
+          'deleted',
+          config,
+          (log) => setWebhookLogs((prev) => [log, ...prev].slice(0, 30))
+        );
       }
 
       addToast(
         'success',
         'Producto Eliminado',
-        `"${product.name}" ha sido eliminado exitosamente del catálogo.`
+        `"${product.name}" ha sido eliminado permanentemente de tu tienda.`
       );
       setProductToDelete(null);
     } catch (err: any) {
-      addToast('error', 'Error al Eliminar', err.message || 'No se pudo eliminar el producto.');
+      addToast('error', 'Error al Eliminar', err.message || 'Fallo de conexión al eliminar el producto.');
     } finally {
       setIsDeletingProduct(false);
     }
   };
 
-  // Sync products with app: "🔥Botón para sincronizar productos con la app"
-  const handleSync = async (silent = false) => {
+  // Paginated, abort-safe product loader respecting server cache
+  const fetchProductsPage = async (opts: { page?: number; search?: string; refresh?: boolean; silent?: boolean } = {}) => {
+    const targetPage = opts.page ?? currentPage;
+    const targetSearch = opts.search ?? searchQuery;
+    const forceRefresh = Boolean(opts.refresh);
+    const silent = Boolean(opts.silent);
+
+    // Prevent overlapping manual sync bursts
+    if (forceRefresh && isSyncInFlightRef.current) return;
+
+    if (activeFetchAbortRef.current) {
+      activeFetchAbortRef.current.abort();
+    }
+    const controller = new AbortController();
+    activeFetchAbortRef.current = controller;
+    if (forceRefresh) isSyncInFlightRef.current = true;
     setIsSyncing(true);
+
     try {
-      const res = await fetch(`/api/woocommerce/products?vendor_id=${currentVendorId}&refresh=1`, {
+      const qs = new URLSearchParams({
+        page: String(targetPage),
+        per_page: String(perPage),
+      });
+      if (targetSearch.trim()) qs.set('search', targetSearch.trim());
+      if (forceRefresh) qs.set('refresh', '1');
+
+      const res = await fetch(`/api/woocommerce/products?${qs.toString()}`, {
         headers: getAuthHeaders(),
         credentials: 'include',
+        signal: controller.signal,
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.products)) {
-          // 1. Update products for active vendor
-          setProducts((prev) => {
-            const others = prev.filter((p) => p.vendorId !== currentVendorId);
-            const combined = [...data.products, ...others];
-            saveStoredProducts(combined);
-            return combined;
+
+      if (res.status === 401) {
+        setIsAuthenticated(false);
+        setIsLoginOpen(true);
+        return;
+      }
+
+      const data = await res.json().catch(() => null);
+      if (res.ok && data?.success && Array.isArray(data.products)) {
+        setProducts((prev) => {
+          // Preserve locally modified pending products so edits aren't lost across page loads
+          const pendingMap = new Map<number, Product>();
+          for (const p of prev) {
+            if (p.vendorId === currentVendorId && p.isModifiedLocally) {
+              pendingMap.set(p.id, p);
+            }
+          }
+          const mergedPage = data.products.map((srvProd: Product) =>
+            pendingMap.has(srvProd.id) ? pendingMap.get(srvProd.id)! : srvProd
+          );
+          return mergedPage;
+        });
+
+        setCurrentPage(data.page || targetPage);
+        setTotalServerProducts(typeof data.total === 'number' ? data.total : data.products.length);
+        setTotalServerPages(typeof data.totalPages === 'number' && data.totalPages > 0 ? data.totalPages : 1);
+        if (Array.isArray(data.categories)) {
+          setServerCategories(data.categories);
+        }
+        if (Array.isArray(data.vendors) && data.vendors.length > 0) {
+          setVendors((prevVendors) => {
+            const map = new Map<number, DokanVendor>();
+            for (const v of prevVendors) map.set(v.id, v);
+            for (const v of data.vendors) map.set(v.id, v);
+            const merged = Array.from(map.values());
+            saveStoredVendors(merged);
+            return merged;
           });
-
-          // 2. Update vendors from live Merqba stores discovered
-          if (Array.isArray(data.vendors) && data.vendors.length > 0) {
-            setVendors(data.vendors);
-            saveStoredVendors(data.vendors);
-          }
-
-          const currentStore = (data.vendors || vendors).find((v: any) => v.id === currentVendorId);
-
-          if (!silent) {
-            addToast(
-              'success',
-              'Catálogo Real Sincronizado',
-              `Sincronización completada. Mostrando ${data.products.length} productos de "${currentStore?.storeName || 'tu tienda'}".`
-            );
-          }
-        } else {
-          if (!silent) {
-            addToast('info', 'Catálogo Sincronizado', 'Catálogo de tu tienda sincronizado correctamente.');
-          }
         }
-      } else {
+
         if (!silent) {
-          addToast('error', 'Error al Sincronizar', 'No se pudo obtener el catálogo de Merqba.');
+          addToast(
+            'success',
+            forceRefresh ? 'Catálogo Real Sincronizado' : 'Catálogo Cargado',
+            `Mostrando ${data.products.length} de ${data.total ?? data.products.length} productos.`
+          );
         }
+      } else if (!silent) {
+        addToast('error', 'Error al Sincronizar', data?.message || 'No se pudo obtener el catálogo de Merqba.');
       }
     } catch (e: any) {
+      if (e?.name === 'AbortError') return;
       if (!silent) {
         addToast('error', 'Error al Sincronizar', e.message || 'Fallo de conexión.');
       }
     } finally {
-      setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      setIsSyncing(false);
+      if (activeFetchAbortRef.current === controller) {
+        setLastSyncTime(new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+        setIsSyncing(false);
+        isSyncInFlightRef.current = false;
+      }
     }
   };
 
-  // Apply changes / Fire webhook:
-  // "🔥Botón en la esquina derecha para aplicar cambios (esto dispara el webhook enviando todos los datos de los productos de la tienda o si es posible en tiempo real."
+  // Manual sync button handler (explicit refresh=1 protected by single-flight)
+  const handleSync = async (silent = false) => {
+    await fetchProductsPage({ page: currentPage, search: searchQuery, refresh: true, silent });
+  };
+
+  // Debounced server search ONLY when catalog spans >1 page (small catalogs <=50 items filter locally at 0 API cost)
+  const handleSearchChange = (q: string) => {
+    setSearchQuery(q);
+    if (totalServerPages > 1 || currentPage > 1) {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      searchDebounceRef.current = setTimeout(() => {
+        fetchProductsPage({ page: 1, search: q, refresh: false, silent: true });
+      }, 360);
+    }
+  };
+
+  const handlePageChange = (nextPage: number) => {
+    if (nextPage < 1 || nextPage > totalServerPages || nextPage === currentPage) return;
+    setSelectedProductIds([]);
+    fetchProductsPage({ page: nextPage, search: searchQuery, refresh: false, silent: true });
+  };
+
+  // Apply pending bulk/local changes (incremental ONLY - never resends unchanged catalog)
   const handleApplyChanges = async () => {
     if (isDispatchingWebhook) return;
 
-    // Send ONLY modified products to avoid altering untouched products
     const modifiedProducts = vendorProducts.filter((p) => p.isModifiedLocally);
-    const targetProducts = modifiedProducts.length > 0 ? modifiedProducts : vendorProducts;
+    if (modifiedProducts.length === 0) {
+      addToast(
+        'info',
+        'Sin Cambios Pendientes',
+        'Todos tus productos ya están actualizados y guardados en tu tienda.'
+      );
+      return;
+    }
 
     setIsDispatchingWebhook(true);
     try {
-      // 1. Dispatch batch changes to store backend with authentication headers
       const batchRes = await fetch('/api/woocommerce/batch', {
         method: 'POST',
         headers: getAuthHeaders(),
         credentials: 'include',
-        body: JSON.stringify({ products: targetProducts }),
+        body: JSON.stringify({ products: modifiedProducts }),
       });
       const batchData = await batchRes.json().catch(() => ({}));
 
-      if (batchRes.status === 401) {
+      if (batchRes.status === 401 || batchData?.authRequired) {
         addToast(
           'error',
           'Sesión Expirada',
@@ -678,35 +807,34 @@ export default function App() {
         return;
       }
 
-      if (!batchRes.ok || !batchData.savedToWooCommerce) {
-        addToast(
-          'error',
-          'Error al Actualizar en Tienda',
-          batchData.message || 'No se pudieron guardar los cambios en la tienda. Inténtalo nuevamente.'
+      const succeededSet = new Set<number>(
+        Array.isArray(batchData.succeededIds) ? batchData.succeededIds.map(Number) : []
+      );
+
+      if (succeededSet.size > 0) {
+        setProducts((prev) =>
+          prev.map((p) => (p.vendorId === currentVendor.id && succeededSet.has(p.id) ? { ...p, isModifiedLocally: false } : p))
         );
-        return;
+        const syncedItems = modifiedProducts.filter((p) => succeededSet.has(p.id));
+        const whResult = await dispatchProductsWebhook(currentVendor, syncedItems, config, 'manual_button', 'updated');
+        if (whResult.log) {
+          setWebhookLogs((prev) => [whResult.log!, ...prev].slice(0, 30));
+        }
       }
 
-      // 2. Dispatch secondary sync log
-      const result = await dispatchProductsWebhook(
-        currentVendor,
-        vendorProducts,
-        config,
-        'manual_button'
-      );
-
-      // Clear local modified flags for this vendor ONLY when store save succeeded
-      setProducts((prev) =>
-        prev.map((p) => (p.vendorId === currentVendor.id ? { ...p, isModifiedLocally: false } : p))
-      );
-
-      setWebhookLogs((prev) => [result.log, ...prev].slice(0, 30));
-
-      addToast(
-        'success',
-        '¡Cambios Guardados con Éxito!',
-        batchData.message || `Cambios sincronizados (${targetProducts.length} productos actualizados)`
-      );
+      if (batchRes.ok && batchData.savedToWooCommerce) {
+        addToast(
+          'success',
+          '¡Cambios Guardados con Éxito!',
+          batchData.message || `${modifiedProducts.length} productos actualizados correctamente.`
+        );
+      } else {
+        addToast(
+          'error',
+          batchData.partialSuccess ? 'Actualización Parcial' : 'Error al Actualizar en Tienda',
+          batchData.message || 'No se pudieron guardar los cambios en la tienda. Inténtalo nuevamente.'
+        );
+      }
     } catch (err: any) {
       addToast('error', 'Error al Guardar', err.message || 'Fallo de red al aplicar cambios.');
     } finally {
@@ -714,7 +842,7 @@ export default function App() {
     }
   };
 
-  // Handle vendor selection / login
+  // Handle vendor selection / login (respects valid server cache on page 1)
   const handleSelectVendor = async (vendor: DokanVendor) => {
     setIsAuthenticated(true);
     setActiveVendorId(vendor.id);
@@ -722,42 +850,10 @@ export default function App() {
     setSearchQuery('');
     setStatusFilter('all');
     setSelectedCategory('all');
+    setCurrentPage(1);
     setIsLoginOpen(false);
 
-    // Fetch this vendor's live products from WooCommerce bypassing cache
-    setIsSyncing(true);
-    try {
-      const res = await fetch(`/api/woocommerce/products?vendor_id=${vendor.id}&refresh=1`, {
-        headers: getAuthHeaders(),
-        credentials: 'include',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.products)) {
-          setProducts((prev) => {
-            const others = prev.filter((p) => p.vendorId !== vendor.id);
-            const combined = [...data.products, ...others];
-            saveStoredProducts(combined);
-            return combined;
-          });
-          addToast(
-            'success',
-            'Catálogo Cargado',
-            `Conectado a "${vendor.storeName}". ${data.products.length} productos cargados en vivo.`
-          );
-          return;
-        }
-      }
-      addToast(
-        'info',
-        'Sesión Iniciada',
-        `Accediendo al catálogo de "${vendor.storeName}".`
-      );
-    } catch (e: any) {
-      console.warn('Sync on vendor login warning:', e);
-    } finally {
-      setIsSyncing(false);
-    }
+    await fetchProductsPage({ page: 1, search: '', refresh: false, silent: false });
   };
 
   // Handle logout
@@ -899,7 +995,7 @@ export default function App() {
           {/* 3. Product Filter & Search Bar */}
           <FilterBar
             searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
+            onSearchChange={handleSearchChange}
             statusFilter={statusFilter}
             onStatusFilterChange={setStatusFilter}
             selectedCategory={selectedCategory}
@@ -907,10 +1003,10 @@ export default function App() {
             categories={vendorCategories}
             sortOption={sortOption}
             onSortChange={setSortOption}
-            totalResults={vendorProducts.length}
+            totalResults={totalServerProducts > 0 ? totalServerProducts : vendorProducts.length}
             totalFiltered={displayProducts.length}
             onResetFilters={() => {
-              setSearchQuery('');
+              handleSearchChange('');
               setStatusFilter('all');
               setSelectedCategory('all');
             }}
@@ -1019,23 +1115,55 @@ export default function App() {
 
             {/* Product Cards Grid */}
             {displayProducts.length > 0 ? (
-              <div className="grid grid-cols-1 xl:grid-cols-2 3xl:grid-cols-3 gap-3">
-                {displayProducts.map((product, index) => (
-                  <ProductCard
-                    key={product.id}
-                    product={product}
-                    config={config}
-                    isSelected={selectedProductIds.includes(product.id)}
-                    isFirstTourTarget={index === 0}
-                    onToggleSelect={handleToggleSelectProduct}
-                    onSelectSamePrice={handleSelectSamePrice}
-                    onUpdateProduct={handleUpdateProduct}
-                    onOpenQuickEdit={(p) => setQuickEditProduct(p)}
-                    onShareProduct={(p) => setSharingProduct(p)}
-                    onDeleteProduct={(p) => setProductToDelete(p)}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="grid grid-cols-1 xl:grid-cols-2 3xl:grid-cols-3 gap-3">
+                  {displayProducts.map((product, index) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      config={config}
+                      isSelected={selectedProductIds.includes(product.id)}
+                      isFirstTourTarget={index === 0}
+                      onToggleSelect={handleToggleSelectProduct}
+                      onSelectSamePrice={handleSelectSamePrice}
+                      onUpdateProduct={handleUpdateProduct}
+                      onOpenQuickEdit={(p) => setQuickEditProduct(p)}
+                      onShareProduct={(p) => setSharingProduct(p)}
+                      onDeleteProduct={(p) => setProductToDelete(p)}
+                    />
+                  ))}
+                </div>
+
+                {/* Paginación del catálogo en servidor */}
+                {totalServerPages > 1 && (
+                  <div className="mt-5 flex items-center justify-between bg-white border border-[#E2E8F0] rounded-xl px-4 py-3 shadow-2xs">
+                    <span className="text-xs text-[#64748B]">
+                      Página <strong className="text-[#0F172A]">{currentPage}</strong> de{' '}
+                      <strong className="text-[#0F172A]">{totalServerPages}</strong> ({totalServerProducts} productos)
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handlePageChange(currentPage - 1)}
+                        disabled={currentPage <= 1 || isSyncing}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#0F172A] bg-[#F8FAFC] hover:bg-[#FFF7ED] border border-[#CBD5E1] hover:border-[#FF5A00] rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Anterior</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePageChange(currentPage + 1)}
+                        disabled={currentPage >= totalServerPages || isSyncing}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold text-[#0F172A] bg-[#F8FAFC] hover:bg-[#FFF7ED] border border-[#CBD5E1] hover:border-[#FF5A00] rounded-lg transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        <span>Siguiente</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
             ) : (
               <div className="bg-white rounded-2xl border border-[#E2E8F0] p-8 text-center max-w-md mx-auto my-8 space-y-3">
                 <div className="w-12 h-12 bg-[#FFF7ED] text-[#EA580C] border border-[#FED7AA] rounded-full flex items-center justify-center mx-auto">
@@ -1047,7 +1175,7 @@ export default function App() {
                 </p>
                 <button
                   onClick={() => {
-                    setSearchQuery('');
+                    handleSearchChange('');
                     setStatusFilter('all');
                     setSelectedCategory('all');
                   }}

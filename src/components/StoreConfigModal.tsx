@@ -60,25 +60,17 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = ({
   const [rateSuccess, setRateSuccess] = useState<string | null>(null);
   const [authError, setAuthError] = useState<boolean>(false);
 
-  // Helper to extract session token & credentials from sessionStorage
+  // Helper to extract session token cleanly
   const getAuthHeaders = (): Record<string, string> => {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
     };
-    const sessionToken = sessionStorage.getItem('merqba_session_token');
+    const sessionToken =
+      sessionStorage.getItem('merqba_session_token') ||
+      localStorage.getItem('merqba_session_token');
     if (sessionToken) {
       headers['x-session-token'] = sessionToken;
-    }
-    try {
-      const raw = sessionStorage.getItem('merqba_auth_user');
-      if (raw) {
-        const creds = JSON.parse(raw);
-        if (creds.username) headers['x-vendor-username'] = creds.username;
-        if (creds.password) headers['x-vendor-password'] = creds.password;
-      }
-    } catch (e) {
-      // ignore
     }
     return headers;
   };

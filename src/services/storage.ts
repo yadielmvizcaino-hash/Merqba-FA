@@ -98,7 +98,11 @@ export const getStoredConfig = (): StoreConfig => {
       localStorage.setItem(STORAGE_KEYS.CONFIG, JSON.stringify(DEFAULT_CONFIG));
       return DEFAULT_CONFIG;
     }
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    const merged = { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    if (merged.webhookUrl === 'https://merqba.com/wp-json/merqba/v1/sync') {
+      merged.webhookUrl = '';
+    }
+    return merged;
   } catch (e) {
     return DEFAULT_CONFIG;
   }

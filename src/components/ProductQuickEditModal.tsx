@@ -60,26 +60,25 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
           setIsUploadingImage(true);
           setUploadSuccessMsg(null);
           try {
-            let creds: { username?: string; password?: string } = {};
-            try {
-              const raw = sessionStorage.getItem('merqba_auth_user');
-              if (raw) creds = JSON.parse(raw);
-            } catch (e) {}
+            const token =
+              sessionStorage.getItem('merqba_session_token') ||
+              localStorage.getItem('merqba_session_token');
+            const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+            if (token) headers['x-session-token'] = token;
 
             const res = await fetch('/api/woocommerce/upload-image', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers,
+              credentials: 'include',
               body: JSON.stringify({
                 filename: file.name,
-                fileData: base64,
+                base64,
                 mimeType: file.type || 'image/jpeg',
                 productId: product.id,
-                username: creds.username,
-                password: creds.password,
               }),
             });
             const data = await res.json();
-            if (data.success && data.url) {
+            if (res.ok && data.success && data.url) {
               setImageUrl(data.url);
               setUploadSuccessMsg('Imagen guardada correctamente');
             }
