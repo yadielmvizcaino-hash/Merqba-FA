@@ -229,6 +229,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               onUpdateProduct({
                 ...product,
                 imageUrl: data.url,
+                imageId: data.id ? Number(data.id) : product.imageId,
                 isModifiedLocally: false,
                 lastModified: new Date().toISOString(),
               });

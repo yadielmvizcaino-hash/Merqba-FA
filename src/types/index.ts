@@ -28,6 +28,7 @@ export interface Product {
   stockStatus: StockStatus;
   manageStock: boolean;
   imageUrl: string;
+  imageId?: number;
   category: string;
   description?: string;
   tags?: string[];

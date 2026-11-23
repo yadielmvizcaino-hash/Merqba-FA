@@ -529,6 +529,7 @@ export default function App() {
     }
     if (updated.imageUrl && updated.imageUrl.startsWith('http') && (!previous || updated.imageUrl !== previous.imageUrl)) {
       deltaPayload.imageUrl = updated.imageUrl;
+      if (updated.imageId) deltaPayload.imageId = updated.imageId;
     }
     if (Object.keys(deltaPayload).length === 0) {
       deltaPayload.price = updated.price;

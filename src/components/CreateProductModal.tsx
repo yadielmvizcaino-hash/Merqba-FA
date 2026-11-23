@@ -33,6 +33,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
   const [description, setDescription] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [imageId, setImageId] = useState<number | undefined>(undefined);
   const [uploadSuccessMsg, setUploadSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -67,6 +68,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
             const data = await res.json();
             if (res.ok && data.success && data.url) {
               setImageUrl(data.url);
+              if (data.id) setImageId(Number(data.id));
               setUploadSuccessMsg('Imagen guardada correctamente');
             }
           } catch (err) {
@@ -131,6 +133,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
       imageUrl: imageUrl.trim().startsWith('http')
         ? imageUrl.trim()
         : 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png',
+      imageId: imageUrl.trim().startsWith('http') ? imageId : undefined,
       description: description.trim(),
     };
 
@@ -143,6 +146,7 @@ export const CreateProductModal: React.FC<CreateProductModalProps> = ({
         setRegularPrice('');
         setSalePrice('');
         setImageUrl('');
+        setImageId(undefined);
         setDescription('');
         onClose();
       }

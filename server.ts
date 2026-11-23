@@ -429,6 +429,10 @@ function mapRawProduct(item: any, vendorId: number) {
   const stockStatus = inStock ? 'instock' : 'outofstock';
   const stockQuantity = rawQty !== null ? rawQty : inStock ? 10 : 0;
 
+  const primaryImage =
+    (Array.isArray(item.images) && item.images.find((img: any) => img?.is_featured === true)) ||
+    item.images?.[0];
+
   return {
     id: Number(item.id),
     vendorId,
@@ -442,11 +446,35 @@ function mapRawProduct(item: any, vendorId: number) {
     stockQuantity: isNaN(stockQuantity) ? 0 : stockQuantity,
     stockStatus,
     manageStock,
-    imageUrl: item.images?.[0]?.src || 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png',
+    imageUrl: primaryImage?.src || 'https://merqba.com/wp-content/uploads/2026/05/cropped-merqba-logo-icon.png',
+    imageId: primaryImage?.id ? Number(primaryImage.id) : undefined,
     category: item.categories?.[0]?.name || 'General',
     tags: Array.isArray(item.tags) ? item.tags.map((t: any) => t.name) : [],
     lastModified: item.date_modified || new Date().toISOString(),
   };
+}
+
+// Build WooCommerce/Dokan featured image payload (position: 0 is REQUIRED so WP sets _thumbnail_id for the shop catalog)
+function buildFeaturedImagesPayload(
+  imageUrl?: string,
+  imageId?: number,
+  forDokan = false
+): Array<Record<string, any>> | undefined {
+  const validId = imageId && Number(imageId) > 0 ? Number(imageId) : undefined;
+  const validUrl = imageUrl && String(imageUrl).startsWith('http') ? String(imageUrl) : undefined;
+  if (!validId && !validUrl) return undefined;
+
+  const entry: Record<string, any> = { position: 0 };
+  if (validId) {
+    entry.id = validId;
+  } else if (validUrl) {
+    entry.src = validUrl;
+  }
+  if (forDokan) {
+    if (validUrl) entry.src = validUrl;
+    entry.is_featured = true;
+  }
+  return [entry];
 }
 
 // Verify strict server-side ownership of a single product before any mutation
@@ -1294,38 +1322,43 @@ app.post('/api/woocommerce/upload-image', async (req, res) => {
       uploadedMediaUrl = `/uploads/${safeFileName}`;
     }
 
-    // Attach to product ONLY if WordPress generated a public URL/ID
+    // Attach to product as Featured Image (_thumbnail_id via position: 0) ONLY if WordPress generated a public URL/ID
     if (productId && uploadMethod === 'wordpress_rest_media' && (uploadedMediaUrl.startsWith('http') || uploadedMediaId)) {
-      const imagePayload: any = {
-        images: uploadedMediaId ? [{ id: uploadedMediaId, src: uploadedMediaUrl }] : [{ src: uploadedMediaUrl }],
-      };
+      const dokanImages = buildFeaturedImagesPayload(uploadedMediaUrl, uploadedMediaId, true);
+      const wcImages = buildFeaturedImagesPayload(uploadedMediaUrl, uploadedMediaId, false);
 
       let attached = false;
-      if (vendorHeaders) {
+      if (vendorHeaders && dokanImages) {
         const tAttach = performance.now();
         externalRequests++;
         try {
           const dokanAttach = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/products/${productId}`, {
             method: 'PUT',
             headers: vendorHeaders,
-            body: JSON.stringify(imagePayload),
+            body: JSON.stringify({ images: dokanImages }),
           });
           externalDurationMs += Math.round(performance.now() - tAttach);
-          attached = dokanAttach.ok;
+          if (dokanAttach.ok) {
+            const dokanJson = await dokanAttach.json().catch(() => null);
+            const isFeaturedConfirmed =
+              Array.isArray(dokanJson?.images) &&
+              dokanJson.images.some((img: any) => img?.is_featured === true);
+            attached = isFeaturedConfirmed;
+          }
         } catch {
           externalDurationMs += Math.round(performance.now() - tAttach);
         }
       }
 
       const adminHeaders = getWcAdminHeaders();
-      if (!attached && adminHeaders) {
+      if (!attached && adminHeaders && wcImages) {
         const tAttachWc = performance.now();
         externalRequests++;
         try {
           const wcAttach = await fetch(buildWcApiUrl(`/wp-json/wc/v3/products/${productId}`), {
             method: 'PUT',
             headers: adminHeaders,
-            body: JSON.stringify(imagePayload),
+            body: JSON.stringify({ images: wcImages }),
           });
           externalDurationMs += Math.round(performance.now() - tAttachWc);
           attached = wcAttach.ok;
@@ -1335,7 +1368,10 @@ app.post('/api/woocommerce/upload-image', async (req, res) => {
       }
 
       if (attached) {
-        patchProductInVendorCache(session.vendorId, Number(productId), { imageUrl: uploadedMediaUrl });
+        patchProductInVendorCache(session.vendorId, Number(productId), {
+          imageUrl: uploadedMediaUrl,
+          ...(uploadedMediaId ? { imageId: uploadedMediaId } : {}),
+        });
       }
     }
 
@@ -1436,7 +1472,7 @@ app.post('/api/woocommerce/batch', async (req, res) => {
       stock_quantity: p.stockQuantity,
       stock_status: p.stockQuantity > 0 ? 'instock' : 'outofstock',
       sku: p.sku,
-      images: p.imageUrl && String(p.imageUrl).startsWith('http') ? [{ src: p.imageUrl }] : undefined,
+      images: buildFeaturedImagesPayload(p.imageUrl, p.imageId, false),
       categories: p.category ? [{ name: p.category }] : undefined,
       meta_data: [{ key: '_dokan_vendor_id', value: String(session.vendorId) }],
     }));
@@ -1464,8 +1500,9 @@ app.post('/api/woocommerce/batch', async (req, res) => {
         payloadItem.stock_quantity = qty;
         payloadItem.stock_status = isInstock ? 'instock' : 'outofstock';
       }
-      if (p.imageUrl && String(p.imageUrl).startsWith('http')) {
-        payloadItem.images = [{ src: p.imageUrl }];
+      const batchImages = buildFeaturedImagesPayload(p.imageUrl, p.imageId, false);
+      if (batchImages) {
+        payloadItem.images = batchImages;
       }
       return payloadItem;
     });
@@ -1631,7 +1668,7 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
     return res.status(400).json({ success: false, savedToWooCommerce: false, message: 'ID de producto inválido' });
   }
 
-  const { name, price, regularPrice, salePrice, stockStatus, stockQuantity, imageUrl } = req.body;
+  const { name, price, regularPrice, salePrice, stockStatus, stockQuantity, imageUrl, imageId } = req.body;
   const payload: Record<string, any> = {};
 
   if (name !== undefined && typeof name === 'string' && name.trim()) {
@@ -1670,8 +1707,10 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
     payload.stock_status = qty > 0 ? 'instock' : 'outofstock';
   }
 
-  if (imageUrl && String(imageUrl).startsWith('http')) {
-    payload.images = [{ src: imageUrl }];
+  const wcFeaturedImages = buildFeaturedImagesPayload(imageUrl, imageId, false);
+  const dokanFeaturedImages = buildFeaturedImagesPayload(imageUrl, imageId, true);
+  if (wcFeaturedImages) {
+    payload.images = wcFeaturedImages;
   }
 
   if (Object.keys(payload).length === 0) {
@@ -1721,7 +1760,8 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
       });
     }
 
-    let response: Response | null = null;
+    let saved = false;
+    let responseBody: any = null;
     let lastErrorDetail = '';
 
     // 1. Try Dokan Lite native vendor endpoint first (uses vendor session cookie+nonce, zero admin credentials)
@@ -1732,16 +1772,25 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
       const tDokan = performance.now();
       externalRequests++;
       try {
+        const dokanBodyPayload = dokanFeaturedImages
+          ? { ...payload, images: dokanFeaturedImages }
+          : payload;
         const dokanRes = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/products/${productId}`, {
           method: 'PUT',
           headers: vendorHeaders,
-          body: JSON.stringify(payload),
+          body: JSON.stringify(dokanBodyPayload),
           signal: dokanController.signal,
         });
         clearTimeout(dokanTimeout);
         externalDurationMs += Math.round(performance.now() - tDokan);
         if (dokanRes.ok) {
-          response = dokanRes;
+          responseBody = await dokanRes.json().catch(() => null);
+          const imageRequested = Boolean(dokanFeaturedImages);
+          const featuredConfirmed =
+            !imageRequested ||
+            (Array.isArray(responseBody?.images) &&
+              responseBody.images.some((img: any) => img?.is_featured === true));
+          saved = featuredConfirmed;
         } else {
           lastErrorDetail = `Dokan HTTP ${dokanRes.status}`;
         }
@@ -1752,8 +1801,8 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
       }
     }
 
-    // 2. Fallback to WC REST API (already ownership-verified above)
-    if (!response || !response.ok) {
+    // 2. Fallback to WC REST API (already ownership-verified above, guarantees _thumbnail_id via position: 0)
+    if (!saved) {
       const adminHeaders = getWcAdminHeaders();
       if (adminHeaders) {
         const wcController = new AbortController();
@@ -1770,7 +1819,8 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
           clearTimeout(wcTimeout);
           externalDurationMs += Math.round(performance.now() - tWc);
           if (wcRes.ok) {
-            response = wcRes;
+            saved = true;
+            responseBody = await wcRes.json().catch(() => responseBody);
           } else {
             const txt = await wcRes.text().catch(() => '');
             lastErrorDetail = `WC HTTP ${wcRes.status}: ${sanitizeLogMessage(txt).slice(0, 160)}`;
@@ -1782,9 +1832,6 @@ async function handleSingleProductUpdate(req: express.Request, res: express.Resp
         }
       }
     }
-
-    const saved = Boolean(response && response.ok);
-    const responseBody = saved && response ? await response.json().catch(() => null) : null;
 
     if (!saved) {
       recordOperationMetric({
@@ -1897,6 +1944,9 @@ app.post('/api/woocommerce/products', async (req, res) => {
   const isInstock = newProductData.stockStatus !== 'outofstock';
   const qty = isInstock ? (Number(newProductData.stockQuantity) > 0 ? Number(newProductData.stockQuantity) : 10) : 0;
 
+  const dokanCreateImages = buildFeaturedImagesPayload(newProductData.imageUrl, newProductData.imageId, true);
+  const wcCreateImages = buildFeaturedImagesPayload(newProductData.imageUrl, newProductData.imageId, false);
+
   const payload: any = {
     name: String(newProductData.name).trim(),
     type: 'simple',
@@ -1909,10 +1959,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
     stock_status: isInstock ? 'instock' : 'outofstock',
     stock_quantity: qty,
     sku: newProductData.sku || `SKU-${Date.now().toString().slice(-6)}`,
-    images:
-      newProductData.imageUrl && String(newProductData.imageUrl).startsWith('http')
-        ? [{ src: newProductData.imageUrl }]
-        : undefined,
+    images: wcCreateImages,
     categories: newProductData.category ? [{ name: newProductData.category }] : undefined,
     description: newProductData.description || '',
     meta_data: [{ key: '_dokan_vendor_id', value: String(vendorId) }],
@@ -1920,7 +1967,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
 
   let externalRequests = 0;
   let externalDurationMs = 0;
-  let response: Response | null = null;
+  let createdJson: any = null;
   let lastErrorDetail = '';
 
   // 1. Try Dokan Lite native vendor endpoint first (author = authenticated vendor)
@@ -1931,16 +1978,37 @@ app.post('/api/woocommerce/products', async (req, res) => {
     const tDokan = performance.now();
     externalRequests++;
     try {
+      const dokanPayload = dokanCreateImages ? { ...payload, images: dokanCreateImages } : payload;
       const dokanRes = await fetch(`${WC_STORE_URL}/wp-json/dokan/v1/products`, {
         method: 'POST',
         headers: vendorHeaders,
-        body: JSON.stringify(payload),
+        body: JSON.stringify(dokanPayload),
         signal: dokanCtrl.signal,
       });
       clearTimeout(dokanTimeout);
       externalDurationMs += Math.round(performance.now() - tDokan);
       if (dokanRes.ok) {
-        response = dokanRes;
+        createdJson = await dokanRes.json().catch(() => null);
+        // If Dokan created the product without setting featured image (_thumbnail_id), ensure via wc/v3
+        if (
+          createdJson?.id &&
+          wcCreateImages &&
+          (!Array.isArray(createdJson?.images) || !createdJson.images.some((img: any) => img?.is_featured === true))
+        ) {
+          const adminHeadersFix = getWcAdminHeaders();
+          if (adminHeadersFix) {
+            externalRequests++;
+            const fixRes = await fetch(buildWcApiUrl(`/wp-json/wc/v3/products/${createdJson.id}`), {
+              method: 'PUT',
+              headers: adminHeadersFix,
+              body: JSON.stringify({ images: wcCreateImages }),
+            }).catch(() => null);
+            if (fixRes?.ok) {
+              const fixed = await fixRes.json().catch(() => null);
+              if (fixed?.images) createdJson.images = fixed.images;
+            }
+          }
+        }
       } else {
         lastErrorDetail = `Dokan HTTP ${dokanRes.status}`;
       }
@@ -1952,7 +2020,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
   }
 
   // 2. Fallback to WC REST API with server-enforced vendorId metadata
-  if (!response || !response.ok) {
+  if (!createdJson) {
     const adminHeaders = getWcAdminHeaders();
     if (adminHeaders) {
       const wcCtrl = new AbortController();
@@ -1969,7 +2037,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
         clearTimeout(wcTimeout);
         externalDurationMs += Math.round(performance.now() - tWc);
         if (wcRes.ok) {
-          response = wcRes;
+          createdJson = await wcRes.json().catch(() => null);
         } else {
           const txt = await wcRes.text().catch(() => '');
           lastErrorDetail = `WC HTTP ${wcRes.status}: ${sanitizeLogMessage(txt).slice(0, 160)}`;
@@ -1982,7 +2050,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
     }
   }
 
-  if (!response || !response.ok) {
+  if (!createdJson) {
     recordOperationMetric({
       endpoint: '/api/woocommerce/products',
       opType: 'product_create',
@@ -2002,7 +2070,7 @@ app.post('/api/woocommerce/products', async (req, res) => {
     });
   }
 
-  const createdWcProduct = await response.json();
+  const createdWcProduct = createdJson;
   const mappedProduct = mapRawProduct(createdWcProduct, vendorId);
   recordVendorProductOwnership(vendorId, [mappedProduct.id]);
   invalidateVendorProductCache(vendorId);

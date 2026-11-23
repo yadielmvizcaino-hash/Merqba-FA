@@ -29,6 +29,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
   const [stockQuantity, setStockQuantity] = useState(product?.stockQuantity !== undefined ? product.stockQuantity.toString() : '0');
   const [stockStatus, setStockStatus] = useState<StockStatus>(product?.stockStatus || 'instock');
   const [imageUrl, setImageUrl] = useState(product?.imageUrl || '');
+  const [imageId, setImageId] = useState<number | undefined>(product?.imageId);
   const [sku, setSku] = useState(product?.sku || '');
   const [category, setCategory] = useState(product?.category || '');
 
@@ -40,6 +41,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
       setStockQuantity(product.stockQuantity.toString());
       setStockStatus(product.stockStatus);
       setImageUrl(product.imageUrl);
+      setImageId(product.imageId);
       setSku(product.sku);
       setCategory(product.category);
     }
@@ -80,6 +82,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
             const data = await res.json();
             if (res.ok && data.success && data.url) {
               setImageUrl(data.url);
+              if (data.id) setImageId(Number(data.id));
               setUploadSuccessMsg('Imagen guardada correctamente');
             }
           } catch (err) {
@@ -131,6 +134,7 @@ export const ProductQuickEditModal: React.FC<ProductQuickEditModalProps> = ({
       stockQuantity: finalQty,
       stockStatus: finalStatus,
       imageUrl,
+      imageId,
       sku: sku.trim() || product.sku,
       category: category.trim() || product.category,
       isModifiedLocally: true,
